@@ -1,0 +1,12 @@
+# Downloaded toolchain and Stella settings (recreate with: py -3 tools/setup_toolchain.py)
+/toolchain/
+
+# Build output
+/build/
+
+# Object and listing files
+*.o
+*.elf
+*.map
+*.lst
+*.sym
