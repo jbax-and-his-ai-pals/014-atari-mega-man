@@ -3,25 +3,28 @@
 ;@ Frame (NTSC, 262 lines): VSYNC 3 | VBLANK ~37 | visible 192 | overscan ~30.
 ;@ The ARM coprocessor runs once per frame in VBLANK (CALLFN 255).
 ;@
-;@ Visible kernel: one scanline per pass of the loop, 76 CPU cycles.
-;@ Cycle numbers count from the start of the line (after WSYNC). The TIA
-;@ color clock is 3x the CPU cycle, so a write that completes at cycle c lands at clock 3c.
+;@ Game kernel: one scanline per pass of the loop, exactly 76 CPU cycles, no WSYNC.
+;@ Cycle numbers count from the start of the line. The TIA color clock is 3x the CPU
+;@ cycle, so a write that completes at cycle c lands at clock 3c.
 ;@
-;@ Every line starts with HMOVE, so the sprite pair drifts by the HM value the
-;@ ARM streams in (up to 7 px left or 8 px right per line). That is how one pair
-;@ of sprites moves between objects down the screen without a repositioning
-;@ line. HMOVE blanks the left 8 pixels of each line.
-;@   GRP0/GRP1 land in HBLANK (clocks 24, 39)
-;@   left  PF0/PF1/PF2 land at clocks 54, 69, 84   (needed by 68, 84, 116)
-;@   right PF0/PF1/PF2 land at clocks 123, 138, 153 (windows 84-148, 116-164, 148-196)
-;@   HM, COLUP, COLUBK and ENAM0 are written late in the line for the next line.
-;@ The loop is exactly 76 cycles with no WSYNC; that is what makes room for ENAM0.
+;@ Two fully independent sprite channels: P0 and P1 each stream their own graphics,
+;@ color and horizontal drift (HMOVE on every line), so each can hop from object to
+;@ object down the screen on its own. HMOVE blanks the left 8 pixels of each line.
+;@   left  PF0/PF1/PF2 land at clocks 24, 39, 99 (needed by 76, 84, 116)
+;@   COLUBK lands in HBLANK (54); GRP0/GRP1 at clocks 69, 84; COLUP0/COLUP1 at 114, 129
+;@   right PF0/PF1/PF2 land at clocks 144, 159, 174 (windows 84-148, 116-164, 148-196)
+;@   HMP0/HMP1 are written at the end of the line for the next line's HMOVE.
+;@ There are no missiles: bullets are playfield cells (the ARM draws them), which
+;@ is what frees the cycles for the second channel.
+;@ Limits that follow from the write times: a P1 sprite left of x=16 would show the
+;@ previous row's shape, and P0/P1 left of x=46/61 show the previous row's color for
+;@ their left part, so the ARM keeps P1 objects at x >= 16.
 
 VBLANK_TIMER_60   = 43      ; TIM64T value for the VBLANK interval (NTSC)
 OVERSCAN_TIMER_60 = 35      ; TIM64T value for the overscan interval (NTSC)
 
-top_x             = $80     ; zero-page copy of the top sprite X fetched from the ARM
 scene_mode        = $81     ; 0 = game kernel, 1 = scene kernel (set by the ARM each frame)
+headroom          = $82     ; INTIM after the ARM call; the ARM reads it next frame
 
 Reset:
 	sei
@@ -64,44 +67,36 @@ FrameStart:
 
 	lda #255
 	sta CALLFN                      ; ARM: game update; returns when done
+	lda INTIM                       ; the VBLANK timer after the ARM's time is charged to it
+	sta headroom                    ; (>= 128 means it already ran out)
 	lda #(FF_OFFSET+STREAM_MODE)    ; which visible kernel this frame uses
 	sta scene_mode
 	lda #(FF_OFFSET+STREAM_COLUPF)  ; fetch the frame's playfield color
 	sta COLUPF
 
-	; Sprite pair position at the top: P0 at top_x, P1 8 px to its right.
-	lda #(FF_OFFSET+STREAM_TOPX)
-	sta top_x
+	; Each channel starts at its first object's X.
+	lda #(FF_OFFSET+STREAM_TOPX0)
 	ldx #0
 	jsr PosObject
-	lda top_x
-	clc
-	adc #8
+	lda #(FF_OFFSET+STREAM_TOPX1)
 	ldx #1
-	jsr PosObject
-	lda #(FF_OFFSET+STREAM_M0X)     ; the bullet
-	ldx #2
 	jsr PosObject
 	sta WSYNC
 	sta HMOVE                       ; 3: apply fine motion in HBLANK
+	lda #>DD_IN_HEADROOM            ; hand the ARM the headroom reading for next frame
+	sta DSPTR
+	lda #<DD_IN_HEADROOM
+	sta DSPTR
+	lda headroom
+	sta DSWRITE
 	lda scene_mode
 	bne .waitVBLANK                 ; the scene kernel reads each line's values itself
-	; Game kernel only: entry 0 of the next-line tables: line 0's color,
-	; background, bullet and motion.
-	lda #(FF_OFFSET+STREAM_COLUP)   ; 5
-	sta COLUP0                      ; 8
-	sta COLUP1                      ; 11
-	lda #(FF_OFFSET+STREAM_BK)      ; 13
-	sta COLUBK                      ; 16
-	lda #(FF_OFFSET+STREAM_ENAM0)   ; 18
-	sta ENAM0                       ; 21
-	lda #$20                        ; 23: one copy of P0, missile 4 px wide
-	sta NUSIZ0                      ; 26
-	lda #(FF_OFFSET+STREAM_HM)      ; 28
-	sta HMP0                        ; 31: HMxx left alone for 24 cycles after HMOVE
-	sta HMP1                        ; 34
-	lda #0                          ; 36
-	sta HMM0                        ; 39: the bullet does not drift with the sprites
+	; Game kernel only: entry 0 of the drift tables, for line 0's HMOVE. HMxx must
+	; be left alone for 24 cycles after HMOVE; the work above takes longer.
+	lda #(FF_OFFSET+STREAM_HM0)
+	sta HMP0
+	lda #(FF_OFFSET+STREAM_HM1)
+	sta HMP1
 
 .waitVBLANK:
 	lda INTIM
@@ -119,34 +114,34 @@ FrameStart:
 ;@ Exactly 76 cycles per pass, with no WSYNC, so each pass is one scanline.
 ;@ The branch must not cross a page (checked below), or it takes a cycle more.
 VisibleLoop:
-	sta HMOVE                       ; 3: drift the sprite pair
-	lda #(FF_OFFSET+STREAM_GRP0)    ; 5
-	sta GRP0                        ; 8, clock 24 (HBLANK)
-	lda #(FF_OFFSET+STREAM_GRP1)    ; 10
-	sta GRP1                        ; 13, clock 39 (HBLANK)
-	lda #(FF_OFFSET+STREAM_PF0L)    ; 15
-	sta PF0                         ; 18, clock 54
-	lda #(FF_OFFSET+STREAM_PF1L)    ; 20
-	sta PF1                         ; 23, clock 69
-	lda #(FF_OFFSET+STREAM_PF2L)    ; 25
-	sta PF2                         ; 28, clock 84
-	lda #(FF_OFFSET+STREAM_HM)      ; 30
-	sta HMP0                        ; 33: next line's drift, >= 24 cycles after HMOVE
-	sta HMP1                        ; 36
-	lda #(FF_OFFSET+STREAM_PF0R)    ; 38
-	sta PF0                         ; 41, clock 123
-	lda #(FF_OFFSET+STREAM_PF1R)    ; 43
-	sta PF1                         ; 46, clock 138
-	lda #(FF_OFFSET+STREAM_PF2R)    ; 48
-	sta PF2                         ; 51, clock 153
-	lda #(FF_OFFSET+STREAM_COLUP)   ; 53
-	sta COLUP0                      ; 56: next line's sprite color (ARM changes it
-	sta COLUP1                      ; 59  only on lines with no sprite showing)
-	lda #(FF_OFFSET+STREAM_BK)      ; 61
-	sta COLUBK                      ; 64: next line's background (from pixel 124)
-	lda #(FF_OFFSET+STREAM_ENAM0)   ; 66
-	sta ENAM0                       ; 69: next line's bullet enable (from pixel 139)
-	nop                             ; 71
+	sta HMOVE                       ; 3: drift each channel by its streamed amount
+	lda #(FF_OFFSET+STREAM_PF0L)    ; 5
+	sta PF0                         ; 8, clock 24
+	lda #(FF_OFFSET+STREAM_PF1L)    ; 10
+	sta PF1                         ; 13, clock 39
+	lda #(FF_OFFSET+STREAM_BK)      ; 15
+	sta COLUBK                      ; 18, clock 54 (HBLANK)
+	lda #(FF_OFFSET+STREAM_GRP0)    ; 20
+	sta GRP0                        ; 23, clock 69
+	lda #(FF_OFFSET+STREAM_GRP1)    ; 25
+	sta GRP1                        ; 28, clock 84
+	lda #(FF_OFFSET+STREAM_PF2L)    ; 30
+	sta PF2                         ; 33, clock 99
+	lda #(FF_OFFSET+STREAM_COLUP0)  ; 35
+	sta COLUP0                      ; 38, clock 114
+	lda #(FF_OFFSET+STREAM_COLUP1)  ; 40
+	sta COLUP1                      ; 43, clock 129
+	lda #(FF_OFFSET+STREAM_PF0R)    ; 45
+	sta PF0                         ; 48, clock 144
+	lda #(FF_OFFSET+STREAM_PF1R)    ; 50
+	sta PF1                         ; 53, clock 159
+	lda #(FF_OFFSET+STREAM_PF2R)    ; 55
+	sta PF2                         ; 58, clock 174
+	lda #(FF_OFFSET+STREAM_HM0)     ; 60
+	sta HMP0                        ; 63: next line's drift, >= 24 cycles after HMOVE
+	lda #(FF_OFFSET+STREAM_HM1)     ; 65
+	sta HMP1                        ; 68
+	bit $00                         ; 71 (padding; before DEX so DEX sets the flags)
 	dex                             ; 73
 	bne VisibleLoop                 ; 76 when taken: the next pass starts at cycle 0
 VisibleLoopEnd:
@@ -167,7 +162,6 @@ Overscan:
 	sta GRP0
 	sta GRP1
 	sta COLUBK
-	sta ENAM0
 	lda #OVERSCAN_TIMER_60
 	sta TIM64T
 .waitOverscan:
@@ -176,13 +170,12 @@ Overscan:
 	jmp FrameStart
 
 ;@ Scene kernel, for the intro and menus: one scanline per pass (WSYNC at the top).
-;@ Nothing drifts or shoots here, which frees the cycles for a playfield color
-;@ per line. Every table is indexed by the line it draws (entry k = line k).
-;@   PF0/PF1/PF2 left land at clocks 15, 30, 99 (needed by 68, 84, 116)
-;@   COLUPF and COLUBK land in HBLANK (45, 60)
-;@   sprite color and graphics land at clocks 84, 114, 129, so a sprite must start
-;@   at x >= 62 or its left part is drawn with the previous row's data
-;@   PF0/PF1/PF2 right land at clocks 144, 159, 174 (windows 84-148, 116-164, 148-196)
+;@ Nothing drifts here, which frees the cycles for a playfield color per line, and
+;@ only P0 is used. Every table is indexed by the line it draws (entry k = line k).
+;@   PF0/PF1/PF2 left land at clocks 15, 30, 105 (needed by 76, 84, 116)
+;@   COLUPF, COLUBK and COLUP0 land in HBLANK (45, 60, 75); GRP0 at clock 90, so a
+;@   sprite must start at x >= 22 or its left part shows the previous row's shape
+;@   PF0/PF1/PF2 right land at clocks 120, 135, 156 (windows 84-148, 116-164, 148-196)
 SceneKernel:
 SceneLoop:
 	sta WSYNC                       ; cycle 0
@@ -194,27 +187,25 @@ SceneLoop:
 	sta COLUPF                      ; 15
 	lda #(FF_OFFSET+STREAM_BK)      ; 17
 	sta COLUBK                      ; 20
-	lda #(FF_OFFSET+STREAM_COLUP)   ; 22
+	lda #(FF_OFFSET+STREAM_COLUP0)  ; 22
 	sta COLUP0                      ; 25
-	sta COLUP1                      ; 28
-	lda #(FF_OFFSET+STREAM_PF2L)    ; 30
-	sta PF2                         ; 33
-	lda #(FF_OFFSET+STREAM_GRP0)    ; 35
-	sta GRP0                        ; 38
-	lda #(FF_OFFSET+STREAM_GRP1)    ; 40
-	sta GRP1                        ; 43
-	lda #(FF_OFFSET+STREAM_PF0R)    ; 45
-	sta PF0                         ; 48
-	lda #(FF_OFFSET+STREAM_PF1R)    ; 50
-	sta PF1                         ; 53
-	lda #(FF_OFFSET+STREAM_PF2R)    ; 55
-	sta PF2                         ; 58
-	dex                             ; 60
-	bne SceneLoop                   ; 63
+	lda #(FF_OFFSET+STREAM_GRP0)    ; 27
+	sta GRP0                        ; 30
+	lda #(FF_OFFSET+STREAM_PF2L)    ; 32
+	sta PF2                         ; 35
+	lda #(FF_OFFSET+STREAM_PF0R)    ; 37
+	sta PF0                         ; 40
+	lda #(FF_OFFSET+STREAM_PF1R)    ; 42
+	sta PF1                         ; 45
+	nop                             ; 47: keeps PF2R clear of the last left-half cell
+	lda #(FF_OFFSET+STREAM_PF2R)    ; 49
+	sta PF2                         ; 52
+	dex                             ; 54
+	bne SceneLoop                   ; 57
 	sta WSYNC                       ; finish the last line; overscan starts on a line edge
 	jmp Overscan
 
-;@ Set the horizontal position of object X (0 = P0, 1 = P1, 2 = M0, 3 = M1) to A (0-159).
+;@ Set the horizontal position of object X (0 = P0, 1 = P1) to A (0-159).
 ;@ Coarse position: one RESPx strobe after a divide-by-15 loop; the remainder
 ;@ becomes the fine motion in HMPx. Takes one scanline; HMOVE must follow.
 PosObject:

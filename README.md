@@ -90,23 +90,26 @@ cost a second color write per line, which the loop has no cycles for. The hero h
 idle, three run frames and a jump pose, chosen from the physics state; the walker
 and flyer have two frames each.
 
-## Sprites
+## Sprites and the kernel
 
-Every object is 16x16, drawn with the P0 + P1 pair. The kernel does `HMOVE` on
-every line, with the motion streamed from the ARM, so the pair drifts from one
-object's X to the next one's during the blank lines between them (8 px right or
-7 px left per line), while the playfield keeps drawing. The cost is the black
-8 px `HMOVE` bar on the left edge, and one color per object.
+Every character is 8 pixels wide and 16 tall, drawn with one player sprite.
+The kernel (`src/6502/kernel.asm`) is a uniform 76-cycle loop with two fully
+independent sprite channels: P0 and P1 each stream their own graphics, color and
+horizontal drift (`HMOVE` on every line), so each channel can hop from one object's
+X to the next one's during the lines between them while the asymmetric playfield and
+the per-line sky keep drawing. The ARM deals objects onto the two channels; two
+objects on the same lines are drawn side by side with no flicker, and only a third
+object crowding the same lines makes the least-recently-drawn one take turns.
+The cost is the black 8 px `HMOVE` bar on the left edge. There are no missiles:
+bullets are playfield cells (a cell is 4 px, and a bullet moves one cell a frame),
+so any number can fly without costing a sprite.
 
-Bullets use missile 0 (4 px wide, 2 lines tall), positioned in VBLANK and
-enabled per line from a stream. Up to two fly at once; with two, they take
-turns being drawn. To fit the per-line `ENAM0` write, the visible loop runs
-exactly 76 cycles without `WSYNC`, and the assembler checks its branch does not
-cross a page.
+Because every channel is narrower than a console sprite, the hero's proportions match
+a 16x24 sprite on squarer pixels; see `art/sprites.txt` for why.
 
-Objects too close vertically for the drift take turns: each frame the one that
-has waited longest is drawn, so they flicker rather than vanish. Objects partly
-off the left or right edge are not drawn yet (they pop in).
+`make PERF=1` draws a bar at the top right of the play screen: how much of VBLANK the
+previous frame's ARM work left free (the 6507 reads the timer right after the ARM
+returns). Empty means the frame overran.
 
 Note for `make shot`: Stella needs a few dozen frames after power-on to lock
 onto the frame, so snapshots before about frame 90 can show a rolling picture.

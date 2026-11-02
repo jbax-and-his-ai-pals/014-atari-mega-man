@@ -28,6 +28,8 @@ CFLAGS     = $(ARCH_FLAGS) -std=gnu17 -Os -Wall -ffunction-sections -fdata-secti
 CFLAGS    += $(if $(START_STATE),-DSTART_STATE=$(START_STATE))
 # Debug: a scripted player walks the title and select screens (see game.c).
 CFLAGS    += $(if $(DEMO),-DDEMO_INPUT)
+# Debug: draw the ARM headroom bar at the top of the play screen (touch src/arm/display_list.c).
+CFLAGS    += $(if $(PERF),-DPERF_METER)
 LDFLAGS    = $(ARCH_FLAGS) -nostartfiles -Wl,--gc-sections -Wl,--build-id=none \
              -Wl,-Map=$(ARM_MAP)
 

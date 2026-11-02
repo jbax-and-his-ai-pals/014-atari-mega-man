@@ -13,6 +13,14 @@
 #define PAD_UP      0x08u
 #define PAD_FIRE    0x10u
 
+/* VBLANK time left after the last frame's ARM work, in 64-cycle units; 0 if it ran out. */
+static inline unsigned input_headroom(void)
+{
+    const unsigned v = CDF_DD[DD_IN_HEADROOM];
+
+    return v >= 128u ? 0u : v;
+}
+
 static inline unsigned input_read(void)
 {
     unsigned swcha = CDF_DD[DD_IN_SWCHA];

@@ -1,6 +1,6 @@
 /*
  * The hero's bullets: short horizontal shots fired from the hero's middle in
- * the direction it faces. At most two at once, with a short cooldown. A bullet
+ * the direction it faces. At most three at once, with a short cooldown. A bullet
  * ends when it hits a solid tile or an enemy (which it removes), or after it
  * has flown a screen width.
  *
@@ -13,7 +13,7 @@
 #include "physics.h"
 #include "shots.h"
 
-#define SHOT_MAX      2
+#define SHOT_MAX      3
 #define SHOT_SPEED    4             /* px/frame */
 #define SHOT_RANGE    160           /* px flown before it vanishes */
 #define SHOT_COOLDOWN 8             /* frames between shots */
@@ -25,7 +25,6 @@ static int8_t s_dir[SHOT_MAX];      /* 0 = unused, else +1 / -1 */
 static int16_t s_left[SHOT_MAX];    /* px still to fly */
 static uint8_t cooldown;
 static uint8_t prev_fire;
-static uint8_t turn;                /* which bullet shots_pick shows next */
 
 void shots_init(void)
 {
@@ -39,7 +38,6 @@ void shots_init(void)
     }
     cooldown = 0;
     prev_fire = 1;                  /* a held button does not fire on respawn */
-    turn = 0;
 }
 
 static void fire(void)
@@ -95,17 +93,16 @@ void shots_step(unsigned pad)
     }
 }
 
-int shots_pick(int *x, int *y)
+int shots_get(int i, int *x, int *y)
 {
     int k;
 
     for (k = 0; k < SHOT_MAX; k++) {
-        const int i = (turn + k) & (SHOT_MAX - 1);
-
-        if (s_dir[i] != 0) {
-            turn = (uint8_t)(i + 1);
-            *x = s_x[i];
-            *y = s_y[i];
+        if (s_dir[k] == 0)
+            continue;
+        if (i-- == 0) {
+            *x = s_x[k];
+            *y = s_y[k];
             return 1;
         }
     }

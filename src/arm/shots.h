@@ -10,10 +10,8 @@ void shots_init(void);
 /* Fire on a fresh press of PAD_FIRE, move bullets, and hit tiles and enemies. */
 void shots_step(unsigned pad);
 
-/*
- * The bullet to draw this frame (there is one missile, so two live bullets take
- * turns). Returns 0 if none, else 1 and its top-left in level pixels.
- */
-int shots_pick(int *x, int *y);
+/* Live bullet number i (counting only live ones from 0): 1 and its top-left in level
+ * pixels, or 0 once there are no more. Bullets are drawn as playfield cells. */
+int shots_get(int i, int *x, int *y);
 
 #endif /* SHOTS_H */
