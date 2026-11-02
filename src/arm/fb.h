@@ -35,6 +35,10 @@ void fb_row8(int col, int line, int h, unsigned row);
 void fb_text(int col, int line, const char *s, int sx, int sy);
 int fb_text_width(const char *s, int sx);
 
+/* The same, with wide = 0 to draw M, N and W 3 pixels wide (for tight labels). */
+void fb_text_ex(int col, int line, const char *s, int sx, int sy, int wide);
+int fb_text_width_ex(const char *s, int sx, int wide);
+
 /* The 20-cell halves of one framebuffer line (bit 0 = leftmost cell of each half). */
 void fb_line(unsigned line, uint32_t *left, uint32_t *right);
 

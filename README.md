@@ -51,15 +51,14 @@ second visible loop, the scene kernel, which streams a playfield color per line
 drift or bullets. Press fire during the pan to skip to the vista, and again to leave
 the title. All of the intro's art is generated from a few numbers.
 
-The framebuffer screens work like this. Title and select are drawn into a
-framebuffer (`src/arm/fb.c`): a 40-cell x 192-line bitmap (cells are the 4 px
-playfield blocks) with a 3x5 font, so they have one-line vertical detail instead
-of the tile map's 8 lines. The static art is drawn once and only the blinking
-prompt, cursor and stage name are redrawn per frame. Cell columns 0-1 are hidden
-by the HMOVE bar, so art sits in columns 2-39. Press fire on the title, move the
-cursor on the 3x3 grid (the centre is the hero's portrait and is skipped), and
-press fire on an unlocked stage. Only stage 1 (GROVE) is built; the other seven
-show dithered icons.
+The stage-select screen is also a scene-kernel screen: a striped blue background,
+a 3x3 grid of framed 8x16 emblems with the hero in the middle, a 3-letter label
+under each, and the highlighted stage's full name at the bottom. It is drawn into
+a framebuffer (`src/arm/fb.c`), a 40-cell x 192-line bitmap (cells are the 4 px
+playfield blocks) with a 3x5 font; M, N and W are 5 cells wide in big text and 3
+in tight labels. The scene kernel has no HMOVE bar, so all 40 columns show. Press
+fire on the title, move the cursor (the centre portrait is skipped), and press fire
+on an unlocked stage. Only stage 1 (SAW MAN) is built so far.
 
 All names, icons and art are original.
 

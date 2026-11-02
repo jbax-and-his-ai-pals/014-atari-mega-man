@@ -122,19 +122,29 @@ static int wide_index(char c)
     return c == 'M' ? 0 : c == 'N' ? 1 : c == 'W' ? 2 : -1;
 }
 
-int fb_text_width(const char *s, int sx)
+int fb_text_width_ex(const char *s, int sx, int wide)
 {
     int w = 0;
 
     for (; *s; s++)
-        w += ((wide_index(*s) >= 0 ? 5 : 3) + 1) * sx;
+        w += ((wide && wide_index(*s) >= 0 ? 5 : 3) + 1) * sx;
     return w ? w - sx : 0;
+}
+
+int fb_text_width(const char *s, int sx)
+{
+    return fb_text_width_ex(s, sx, 1);
 }
 
 void fb_text(int col, int line, const char *s, int sx, int sy)
 {
+    fb_text_ex(col, line, s, sx, sy, 1);
+}
+
+void fb_text_ex(int col, int line, const char *s, int sx, int sy, int wide)
+{
     for (; *s; s++) {
-        const int wi = wide_index(*s);
+        const int wi = wide ? wide_index(*s) : -1;
         const int gw = wi >= 0 ? 5 : 3;
         const uint8_t *g = wi >= 0 ? wide_font[wi] : font[glyph_index(*s)];
         int r, c;

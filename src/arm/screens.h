@@ -8,7 +8,9 @@
 
 #define STAGE_COUNT 8
 
+/* Full name ("SAW MAN") and the 3-letter label shown under the portrait ("SAW"). */
 const char *stage_name(int stage);
+const char *stage_short(int stage);
 
 /* Stages that have a level built so far. */
 int stage_playable(int stage);

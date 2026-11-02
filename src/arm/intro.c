@@ -56,8 +56,8 @@ static const struct { int16_t y0; uint8_t c0, c1; } tiers[NUM_TIERS] = {
 #define V_TITLE_2     28
 #define V_READY       50
 
-#define VIS_COL 2                   /* first visible cell column (HMOVE bar hides 0-1) */
-#define VIS_W   38
+#define VIS_COL 0                   /* the scene kernel shows all 40 cell columns */
+#define VIS_W   40
 
 /* Top line of the ridge at each cell. */
 static const uint8_t ridge[40] = {
