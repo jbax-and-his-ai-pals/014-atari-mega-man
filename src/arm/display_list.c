@@ -227,6 +227,12 @@ static void build_sprites(const obj_t *s, int m)
 
     for (i = 0; i < m; i++) {
         const art_frame_t *f = &art_frames[s[i].frame];
+        unsigned right = 0;
+
+        /* A frame that uses only the left 8 pixels is "narrow": mirrored within
+         * those 8 so it stays where it is, not in the right half of the frame. */
+        for (k = 0; k < OBJ_H; k++)
+            right |= f->rows[k] & 0xFFu;
 
         /* Graphics and color for each row that is on screen. The kernel reads
          * COLUP[y] at the end of line y-1, so every row has its own color. */
@@ -234,7 +240,10 @@ static void build_sprites(const obj_t *s, int m)
             const int y = s[i].top + k;
 
             if (y >= 0 && y < (int)LINES) {
-                const uint16_t bits = s[i].flip ? mirror16(f->rows[k]) : f->rows[k];
+                uint16_t bits = f->rows[k];
+
+                if (s[i].flip)
+                    bits = right ? mirror16(bits) : (uint16_t)(fb_rev8[bits >> 8] << 8);
 
                 dd_put(DD_GRP0 + y, (uint8_t)(bits >> 8));
                 dd_put(DD_GRP1 + y, (uint8_t)(bits & 0xFFu));

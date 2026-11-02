@@ -18,7 +18,7 @@
 #define TILE_H      8
 #define LEVEL_W_PX  ((int)LEVEL_COLS * TILE_W)
 
-#define HERO_W      16
+#define HERO_W      8
 #define HERO_H      16
 
 /*

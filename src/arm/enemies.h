@@ -6,7 +6,7 @@
 #ifndef ENEMIES_H
 #define ENEMIES_H
 
-#define ENEMY_W 16
+#define ENEMY_W 8
 #define ENEMY_H 16
 
 void enemies_init(void);                 /* (re)load every enemy from level_enemies, all alive */
