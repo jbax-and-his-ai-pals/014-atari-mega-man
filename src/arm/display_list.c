@@ -22,6 +22,7 @@
 #include "cdfj.h"
 #include "display_list.h"
 #include "enemies.h"
+#include "health.h"
 #include "level.h"
 #include "physics.h"
 #include "shots.h"
@@ -149,11 +150,13 @@ static int gather(obj_t *objs, int cam)
     int n = 0, i, k;
     const int ne = enemies_count();
 
-    objs[n].x = (int16_t)(physics_hero_x() - cam);
-    objs[n].top = (int16_t)physics_hero_row();
-    objs[n].art = ART_HERO;
-    objs[n].id = 0;
-    n++;
+    if (!health_blink()) {          /* hidden on alternate frames while invulnerable */
+        objs[n].x = (int16_t)(physics_hero_x() - cam);
+        objs[n].top = (int16_t)physics_hero_row();
+        objs[n].art = ART_HERO;
+        objs[n].id = 0;
+        n++;
+    }
 
     for (i = 0; i < ne && n < MAX_OBJS; i++) {
         int ex, ey;
@@ -279,6 +282,17 @@ static void build_sprites(const obj_t *s, int m)
     dd_put(DD_TOPX, (uint8_t)((m > 0 ? s[0].x : 0) + HERO_X_TRIM));
 }
 
+/* One 2-tile pip per health point, in the left 20 playfield columns. */
+static uint32_t hud_bits(void)
+{
+    uint32_t bits = 0;
+    int i;
+
+    for (i = 0; i < health_points(); i++)
+        bits |= 3u << (3 + 3 * i);
+    return bits;
+}
+
 /* Missile 0 shows one bullet: enable it on its lines, and send its X. */
 static void build_shot(int cam)
 {
@@ -319,8 +333,15 @@ void display_build(void)
         uint8_t left[3], right[3];
         unsigned k;
 
-        pack_half(level_row_bits(row, col0), left);
-        pack_half(level_row_bits(row, col0 + 20), right);
+        if (row == 0) {
+            /* Health pips replace the (empty) top tile row: 2 tiles each, 1 apart,
+             * starting at column 3 so they clear the HMOVE bar. */
+            pack_half(hud_bits(), left);
+            pack_half(0, right);
+        } else {
+            pack_half(level_row_bits(row, col0), left);
+            pack_half(level_row_bits(row, col0 + 20), right);
+        }
 
         for (k = 0; k < TILE_H; k++, line++) {
             dd_put(DD_PF0L + line, left[0]);

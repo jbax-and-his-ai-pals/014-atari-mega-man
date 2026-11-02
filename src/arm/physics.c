@@ -18,6 +18,9 @@
 #define JUMP_SPEED  (-0x0480)       /* -4.5 scanlines/frame: rises about 40 lines */
 #define JUMP_CUT    (-0x0100)       /* rise speed cap once up is released */
 #define WALK_SPEED  0x0140          /* 1.25 px/frame */
+#define KNOCK_SPEED 0x0200          /* 2 px/frame away from what hit the hero */
+#define KNOCK_FRAMES 8              /* so about 16 px */
+#define KNOCK_HOP   (-0x0300)       /* small hop, -3 scanlines/frame */
 #define X_MAX       ((LEVEL_W_PX - HERO_W) << 8)
 #define RESPAWN_Y   ((int)LINES + HERO_H) /* top scanline that counts as fallen out */
 
@@ -27,6 +30,8 @@ static int32_t hero_vy;             /* 8.8 scanlines per frame */
 static unsigned on_ground;
 static unsigned prev_pad;
 static int facing;                  /* +1 right, -1 left */
+static int32_t knock_vx;            /* 8.8 px/frame while knocked back */
+static unsigned knock_t;            /* frames of knockback left */
 
 static void spawn(void)
 {
@@ -35,6 +40,15 @@ static void spawn(void)
     hero_vy   = 0;
     on_ground = 0;
     facing    = 1;
+    knock_vx  = 0;
+    knock_t   = 0;
+}
+
+void physics_knock(int dir)
+{
+    knock_vx = dir * KNOCK_SPEED;
+    knock_t  = KNOCK_FRAMES;
+    hero_vy  = KNOCK_HOP;
 }
 
 void physics_init(void)
@@ -60,19 +74,14 @@ static int hits(int x0, int x1, int y0, int y1)
     return 0;
 }
 
-static void move_x(unsigned pad)
+/* Move horizontally by dx (8.8 pixels, signed), stopping at walls. */
+static void move_x(int32_t dx)
 {
     int px, py;
 
-    if (pad & PAD_LEFT) {
-        hero_x -= WALK_SPEED;
-        facing = -1;
-    } else if (pad & PAD_RIGHT) {
-        hero_x += WALK_SPEED;
-        facing = 1;
-    } else {
+    if (dx == 0)
         return;
-    }
+    hero_x += dx;
     if (hero_x < 0)
         hero_x = 0;
     if (hero_x > X_MAX)
@@ -80,7 +89,7 @@ static void move_x(unsigned pad)
 
     px = (int)(hero_x >> 8);
     py = (int)(hero_y >> 8);
-    if (pad & PAD_LEFT) {
+    if (dx < 0) {
         if (hits(px, px, py, py + HERO_H - 1))
             hero_x = (((px >> 2) + 1) << 2) << 8;
     } else {
@@ -124,14 +133,27 @@ static void move_y(void)
 int physics_step(unsigned pad)
 {
     const unsigned pressed = pad & ~prev_pad;
+    const int knocked = knock_t != 0;
     int fell = 0;
 
-    move_x(pad);
+    /* While knocked back the controls are ignored, and the hop is not cut short. */
+    if (knocked) {
+        knock_t--;
+        move_x(knock_vx);
+    } else if (pad & PAD_LEFT) {
+        facing = -1;
+        move_x(-WALK_SPEED);
+    } else if (pad & PAD_RIGHT) {
+        facing = 1;
+        move_x(WALK_SPEED);
+    }
 
-    if ((pressed & PAD_UP) && on_ground)
-        hero_vy = JUMP_SPEED;
-    if (!(pad & PAD_UP) && hero_vy < JUMP_CUT)
-        hero_vy = JUMP_CUT;
+    if (!knocked) {
+        if ((pressed & PAD_UP) && on_ground)
+            hero_vy = JUMP_SPEED;
+        if (!(pad & PAD_UP) && hero_vy < JUMP_CUT)
+            hero_vy = JUMP_CUT;
+    }
     move_y();
 
     if ((hero_y >> 8) > RESPAWN_Y) {

@@ -2,8 +2,12 @@
 
 A 32 KB CDFJ+ ROM for the Atari 2600, with the game logic on the ARM coprocessor
 and the screen kernel on the 6507. So far: a hero who walks, jumps and shoots
-across a scrolling tile-map stage with walking and flying enemies. Touching an
-enemy, or falling into a pit, sends you back to the start with every enemy back.
+across a scrolling tile-map stage with walking and flying enemies.
+
+The hero has 3 hit points, shown as pips in the top-left. Touching an enemy
+costs one and throws the hero back with a small hop; falling into a pit costs
+one and returns to the start. After a hit the hero blinks and cannot be hurt for
+1.5 seconds. At zero, everything resets with every enemy back.
 
 Controls (Stella keyboard: arrows and Space): left/right walk, up jumps (hold
 for a higher jump), fire shoots in the direction you face.
@@ -76,6 +80,7 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/arm/input.h` | Joystick and fire bits passed from the 6507 |
 | `src/arm/enemies.c` | Walker and flyer behaviour, hero contact |
 | `src/arm/shots.c` | Hero bullets: fire, move, hit tiles and enemies |
+| `src/arm/health.c` | Hit points and the invulnerability window |
 | `levels/` | Stage text files |
 | `tests/` | Level converter tests (`make test`) |
 | `src/arm/audio.c` | Stub |

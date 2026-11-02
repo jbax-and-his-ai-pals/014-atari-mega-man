@@ -6,6 +6,7 @@
 #include "audio.h"
 #include "display_list.h"
 #include "enemies.h"
+#include "health.h"
 #include "input.h"
 #include "level.h"
 #include "physics.h"
@@ -26,22 +27,39 @@ int main(void)
         physics_init();
         enemies_init();
         shots_init();
+        health_init();
         audio_init();
     }
 
     {
         const unsigned pad = input_read();
-        int died = physics_step(pad);
+        int hurt = physics_step(pad);   /* a fall into a pit already respawned the hero */
 
         enemies_step();
         shots_step(pad);
-        if (enemies_touch(physics_hero_x(), physics_hero_row(), HERO_W, HERO_H))
-            died = 1;
-        if (died) {
-            /* Back to the start, with every enemy back in place. */
+        health_step();
+
+        if (!health_invulnerable()) {
+            /* The hero's box, inset a little so grazes don't count. */
+            const int hx = physics_hero_x();
+            const int idx = enemies_hit(hx + 3, physics_hero_row() + 3, HERO_W - 6, HERO_H - 6);
+
+            if (idx >= 0) {
+                int ex, ey;
+                unsigned type;
+
+                if (enemies_get(idx, &ex, &ey, &type))
+                    physics_knock(hx < ex ? -1 : 1);
+                hurt = 1;
+            }
+        }
+
+        if (hurt && health_hurt()) {
+            /* Out of health: start over, with every enemy back in place. */
             physics_respawn();
             enemies_init();
             shots_init();
+            health_init();
         }
     }
     audio_update();
