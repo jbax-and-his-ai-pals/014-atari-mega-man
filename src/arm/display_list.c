@@ -22,6 +22,7 @@
 #include "cdfj.h"
 #include "display_list.h"
 #include "enemies.h"
+#include "fb.h"
 #include "health.h"
 #include "level.h"
 #include "physics.h"
@@ -48,15 +49,8 @@ static const uint16_t stream_base[NUM_STREAMS] = {
 #define HERO_X_TRIM 3
 #define SHOT_X_TRIM 4               /* the same for missile 0 */
 
-/* Bit-reverse a byte: PF1 shows its bits D7 first, the map stores leftmost first. */
-#define R2(n) n, n + 2 * 64, n + 1 * 64, n + 3 * 64
-#define R4(n) R2(n), R2(n + 2 * 16), R2(n + 1 * 16), R2(n + 3 * 16)
-#define R6(n) R4(n), R4(n + 2 * 4), R4(n + 1 * 4), R4(n + 3 * 4)
-static const uint8_t rev8[256] = { R6(0), R6(2), R6(1), R6(3) };
-
-/* Sprite art, 16x16: high byte -> GRP0 (pixels 0-7), low byte -> GRP1 (8-15). */
-enum { ART_HERO, ART_WALKER, ART_FLYER };
-
+/* Sprite art, 16x16: high byte -> GRP0 (pixels 0-7), low byte -> GRP1 (8-15).
+ * Indexed by the ART_* values in display_list.h. */
 static const uint16_t art[3][OBJ_H] = {
     {   /* hero */
         0x07E0, 0x1FF8, 0x3FFC, 0x7FFE, 0xFFFF, 0xE7E7, 0xE7E7, 0xFFFF,
@@ -86,18 +80,6 @@ typedef struct {
  * whatever is in RAM; it only biases who wins a conflict, so that is harmless.
  */
 static uint8_t starve[MAX_OBJS];
-
-/*
- * Pack 20 playfield bits (bit 0 = leftmost pixel) into PF0, PF1, PF2.
- * PF0 uses D4-D7 with D4 leftmost, PF1 uses D7-D0 with D7 leftmost,
- * PF2 uses D0-D7 with D0 leftmost.
- */
-static void pack_half(uint32_t bits, uint8_t out[3])
-{
-    out[0] = (uint8_t)((bits & 0x0Fu) << 4);
-    out[1] = rev8[(bits >> 4) & 0xFFu];
-    out[2] = (uint8_t)((bits >> 12) & 0xFFu);
-}
 
 static void dd_put(unsigned off, uint8_t v)
 {
@@ -293,6 +275,15 @@ static uint32_t hud_bits(void)
     return bits;
 }
 
+static void clear_shot(void)
+{
+    unsigned line;
+
+    for (line = 0; line <= LINES; line++)
+        dd_put(DD_ENAM0 + line, 0);
+    dd_put(DD_M0X, 0);
+}
+
 /* Missile 0 shows one bullet: enable it on its lines, and send its X. */
 static void build_shot(int cam)
 {
@@ -326,7 +317,6 @@ void display_build(void)
     const unsigned col0 = (unsigned)cam / TILE_W;
     obj_t objs[MAX_OBJS], shown[MAX_OBJS];
     unsigned row, line = 0;
-    unsigned n;
     int m;
 
     for (row = 0; row < LEVEL_ROWS; row++) {
@@ -336,11 +326,11 @@ void display_build(void)
         if (row == 0) {
             /* Health pips replace the (empty) top tile row: 2 tiles each, 1 apart,
              * starting at column 3 so they clear the HMOVE bar. */
-            pack_half(hud_bits(), left);
-            pack_half(0, right);
+            fb_pack_half(hud_bits(), left);
+            fb_pack_half(0, right);
         } else {
-            pack_half(level_row_bits(row, col0), left);
-            pack_half(level_row_bits(row, col0 + 20), right);
+            fb_pack_half(level_row_bits(row, col0), left);
+            fb_pack_half(level_row_bits(row, col0 + 20), right);
         }
 
         for (k = 0; k < TILE_H; k++, line++) {
@@ -353,15 +343,51 @@ void display_build(void)
         }
     }
 
-    /* Sky: blue, getting brighter toward the bottom. */
-    for (line = 0; line <= LINES; line++)
-        dd_put(DD_BK + line, (uint8_t)(0x90u | ((2u + (line >> 5)) << 1)));
+    display_sky(0x90u, 2);          /* blue, getting brighter toward the bottom */
 
     m = schedule(objs, gather(objs, cam), shown);
     build_sprites(shown, m);
     build_shot(cam);
 
-    dd_put(DD_COLUPF, 0x1Eu);       /* platform color: gold */
+    display_finish(0x1Eu);          /* platform color: gold */
+}
+
+void display_sky(uint8_t hue, unsigned lum0)
+{
+    unsigned line;
+
+    for (line = 0; line <= LINES; line++) {
+        unsigned lum = lum0 + (line >> 5);
+
+        if (lum > 7u)
+            lum = 7u;
+        dd_put(DD_BK + line, (uint8_t)(hue | (lum << 1)));
+    }
+}
+
+void display_no_sprites(void)
+{
+    build_sprites(0, 0);
+    clear_shot();
+}
+
+void display_one_sprite(int x, int top, int art_id)
+{
+    obj_t o;
+
+    o.x = (int16_t)x;
+    o.top = (int16_t)top;
+    o.art = (uint8_t)art_id;
+    o.id = 0;
+    build_sprites(&o, 1);
+    clear_shot();
+}
+
+void display_finish(uint8_t colupf)
+{
+    unsigned n;
+
+    dd_put(DD_COLUPF, colupf);
 
     /* Point each stream at its table, and step one byte per fetch. */
     for (n = 0; n < NUM_STREAMS; n++) {

@@ -24,13 +24,17 @@ LAYOUT_H  = build/gen/layout.h
 ARCH_FLAGS = -mcpu=arm7tdmi -march=armv4t -mthumb
 CFLAGS     = $(ARCH_FLAGS) -std=gnu17 -Os -Wall -ffunction-sections -fdata-sections \
              -Iinclude -Isrc/arm -Ibuild/gen
+# Debug: start on a screen (GAME_TITLE=0, GAME_SELECT=1, GAME_PLAY=2); touch src/arm/game.c to apply.
+CFLAGS    += $(if $(START_STATE),-DSTART_STATE=$(START_STATE))
+# Debug: a scripted player walks the title and select screens (see game.c).
+CFLAGS    += $(if $(DEMO),-DDEMO_INPUT)
 LDFLAGS    = $(ARCH_FLAGS) -nostartfiles -Wl,--gc-sections -Wl,--build-id=none \
              -Wl,-Map=$(ARM_MAP)
 
 ARM_OBJS = build/arm/custom.o build/arm/main.o build/arm/physics.o \
            build/arm/display_list.o build/arm/audio.o \
            build/arm/level_data.o build/arm/enemies.o build/arm/shots.o \
-           build/arm/health.o
+           build/arm/health.o build/arm/fb.o build/arm/screens.o build/arm/game.o
 ROM_SRCS = $(wildcard src/6502/*.asm) $(wildcard vendor/cdfjplus/*) $(LAYOUT)
 
 .PHONY: all run clean test

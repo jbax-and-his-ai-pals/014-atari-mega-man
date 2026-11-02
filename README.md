@@ -30,6 +30,26 @@ detection info. The overlay should read `262 / 60.0Hz => NTSC`.
 `make test` runs the level converter's tests. `make shot` runs Stella headless
 for `FRAMES` frames (default 120) and saves `build/shot.png`.
 
+Debug builds (touch `src/arm/game.c` first, since the flags don't trigger a rebuild):
+`make START_STATE=1` starts on a screen (0 title, 1 stage select, 2 play), and
+`make DEMO=1` adds a scripted player that walks title, select and into the stage.
+The frame number `make shot` takes is not a count of game frames (it ran about
+1.6 game frames per snapshot frame, varying from run to run), so sample several.
+
+## Screens
+
+The game runs title -> stage select -> play. Title and select are drawn into a
+framebuffer (`src/arm/fb.c`): a 40-cell x 192-line bitmap (cells are the 4 px
+playfield blocks) with a 3x5 font, so they have one-line vertical detail instead
+of the tile map's 8 lines. The static art is drawn once and only the blinking
+prompt, cursor and stage name are redrawn per frame. Cell columns 0-1 are hidden
+by the HMOVE bar, so art sits in columns 2-39. Press fire on the title, move the
+cursor on the 3x3 grid (the centre is the hero's portrait and is skipped), and
+press fire on an unlocked stage. Only stage 1 (GROVE) is built; the other seven
+show dithered icons.
+
+All names, icons and art are original.
+
 ## Levels
 
 A stage is a text file in `levels/` (currently `levels/stage1.txt`): 24 rows,
@@ -75,6 +95,9 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/6502/kernel.asm` | Frame loop and visible kernel (76 cycles per line) |
 | `src/6502/vectors.asm` | Reset vector and CDFJ+ C stack and entry words |
 | `src/arm/main.c` | Frame entry, called once per frame in VBLANK |
+| `src/arm/game.c` | State machine: title, stage select, play |
+| `src/arm/screens.c` | Title and stage-select screens |
+| `src/arm/fb.c` | Framebuffer drawing, font and playfield packer |
 | `src/arm/physics.c` | Hero motion and tile collision, 8.8 fixed point |
 | `src/arm/display_list.c` | Camera, and rebuilds the per-scanline tables every frame |
 | `src/arm/level.h` | Tile map access shared by rendering and physics |

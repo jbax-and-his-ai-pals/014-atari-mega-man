@@ -50,3 +50,4 @@ DD_COLUPF     = $A00        ; one byte
 DD_TOPX       = $A01        ; one byte
 DD_M0X        = $A02        ; one byte
 DD_ENAM0      = $B00        ; LINES+1 bytes
+DD_FB         = $C00        ; 960-byte framebuffer for the title and menu screens (see fb.h)
