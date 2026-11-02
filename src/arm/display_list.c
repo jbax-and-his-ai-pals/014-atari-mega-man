@@ -26,6 +26,7 @@
 #include "display_list.h"
 #include "enemies.h"
 #include "fb.h"
+#include "hazards.h"
 #include "health.h"
 #include "input.h"
 #include "level.h"
@@ -335,8 +336,7 @@ static uint32_t hud_bits(void)
     return bits;
 }
 
-/* Set playfield cell `cell` (0-39) on scanline `line`, over whatever is there. */
-static void pf_set_cell(int line, int cell)
+void display_pf_cell(int line, int cell, int on)
 {
     static const uint16_t left_base[3] = { DD_PF0L, DD_PF1L, DD_PF2L };
     static const uint16_t right_base[3] = { DD_PF0R, DD_PF1R, DD_PF2R };
@@ -355,7 +355,10 @@ static void pf_set_cell(int line, int cell)
         reg = 2;
         bit = cell - 12;
     }
-    CDF_DD[base[reg] + line] |= (uint8_t)(1u << bit);
+    if (on)
+        CDF_DD[base[reg] + line] |= (uint8_t)(1u << bit);
+    else
+        CDF_DD[base[reg] + line] &= (uint8_t)~(1u << bit);
 }
 
 /* Bullets are playfield cells: 4 px wide like a cell, and they move a cell a frame. */
@@ -370,7 +373,7 @@ static void draw_shots(int cam)
             continue;
         for (k = 0; k < SHOT_H; k++)
             if (sy + k >= 0 && sy + k < (int)LINES)
-                pf_set_cell(sy + k, cell);
+                display_pf_cell(sy + k, cell, 1);
     }
 }
 
@@ -440,6 +443,7 @@ void display_build(void)
 
     schedule(objs, gather(objs, cam), ch);
     build_sprites(ch);
+    hazards_draw(cam);
     draw_shots(cam);
 
     display_finish(0x1Eu);          /* platform color: gold */

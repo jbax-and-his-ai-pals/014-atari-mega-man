@@ -11,6 +11,10 @@ ROWS = 24
 MIN_COLS = 40
 MAX_ENEMIES = 16
 ENEMY_CHARS = {"W": 0, "F": 1}  # char -> type id
+HAZARD_CHARS = {"O": 0, "U": 1, "P": 2}  # char -> HAZ_* type id (saw H, saw V, crusher)
+CONVEYOR_DIRS = {">": 1, "<": -1}  # char -> dir (solid tiles)
+MAX_HAZARDS = 24
+MAX_CONVEYORS = 24
 
 
 class LevelError(Exception):
@@ -18,9 +22,10 @@ class LevelError(Exception):
 
 
 def parse_level(text, name="<level>"):
-    """Return (cols, rows_of_bools, spawn_col, spawn_row, enemies).
+    """Return (cols, rows_of_bools, spawn_col, spawn_row, enemies, hazards, conveyors).
 
-    enemies is a list of (col, row, type) in reading order.
+    enemies and hazards are lists of (col, row, type) in reading order.
+    conveyors is a list of (row, start_col, tile_count, char) runs in reading order.
     """
     lines = []  # (lineno, text)
     for n, raw in enumerate(text.splitlines(), 1):
@@ -42,10 +47,25 @@ def parse_level(text, name="<level>"):
     grid = []
     spawns = []
     enemies = []
+    hazards = []
+    conveyors = []  # runs: [row, first col, tile count, char]
     for r, (n, line) in enumerate(lines):
         row = []
+        run = None  # conveyor run that the previous column belongs to
         for c, ch in enumerate(line):
-            if ch == "#":
+            prev, run = run, None
+            if ch in CONVEYOR_DIRS:
+                row.append(True)
+                if prev is not None and prev[3] == ch:
+                    run = prev
+                    run[2] += 1
+                else:
+                    if len(conveyors) >= MAX_CONVEYORS:
+                        raise LevelError("%s:%d:%d: too many conveyor runs (maximum %d)"
+                                         % (name, n, c + 1, MAX_CONVEYORS))
+                    run = [r, c, 1, ch]
+                    conveyors.append(run)
+            elif ch == "#":
                 row.append(True)
             elif ch == ".":
                 row.append(False)
@@ -58,9 +78,15 @@ def parse_level(text, name="<level>"):
                     raise LevelError("%s:%d:%d: too many enemies (maximum %d)"
                                      % (name, n, c + 1, MAX_ENEMIES))
                 enemies.append((c, r, ENEMY_CHARS[ch]))
+            elif ch in HAZARD_CHARS:
+                row.append(False)
+                if len(hazards) >= MAX_HAZARDS:
+                    raise LevelError("%s:%d:%d: too many hazards (maximum %d)"
+                                     % (name, n, c + 1, MAX_HAZARDS))
+                hazards.append((c, r, HAZARD_CHARS[ch]))
             else:
-                raise LevelError("%s:%d:%d: invalid character %r (use '#', '.', 'S', 'W', 'F')"
-                                 % (name, n, c + 1, ch))
+                raise LevelError("%s:%d:%d: invalid character %r (use '#', '.', 'S', 'W', 'F', "
+                                 "'O', 'U', 'P', '>', '<')" % (name, n, c + 1, ch))
         grid.append(row)
     if not spawns:
         raise LevelError("%s: no spawn 'S' found (exactly one required)" % name)
@@ -68,7 +94,7 @@ def parse_level(text, name="<level>"):
         where = ", ".join("%d:%d" % (n, c + 1) for _, c, n in spawns)
         raise LevelError("%s: multiple spawns 'S' (at line:col %s); exactly one required"
                          % (name, where))
-    return cols, grid, spawns[0][1], spawns[0][0], enemies
+    return cols, grid, spawns[0][1], spawns[0][0], enemies, hazards, conveyors
 
 
 def pack(cols, grid):
@@ -83,9 +109,13 @@ def pack(cols, grid):
     return stride, bytes(data)
 
 
-def render(src_name, cols, grid, sc, sr, enemies=()):
+def render(src_name, cols, grid, sc, sr, enemies=(), hazards=(), conveyors=()):
     ne = len(enemies)
     nd = max(ne, 1)
+    nh = len(hazards)
+    nhd = max(nh, 1)
+    nc = len(conveyors)
+    ncd = max(nc, 1)
     stride, data = pack(cols, grid)
     hdr = (
         "/* Generated from %s by tools/level2c.py. Do not edit. */\n"
@@ -102,7 +132,19 @@ def render(src_name, cols, grid, sc, sr, enemies=()):
         "   /* top-left, pixels: x = 4*col, y = 8*row */\n"
         "extern const uint8_t level_bits[LEVEL_ROWS * LEVEL_STRIDE];\n"
         "extern const level_enemy_t level_enemies[%d];\n"
-        "#endif\n" % (src_name, cols, ROWS, stride, 4 * sc, 8 * sr, ne, nd))
+        "#define HAZ_SAW_H    0u\n"
+        "#define HAZ_SAW_V    1u\n"
+        "#define HAZ_CRUSHER  2u\n"
+        "#define LEVEL_NUM_HAZARDS %du\n"
+        "typedef struct { int16_t x; int16_t y; uint8_t type; } level_hazard_t;"
+        "   /* top-left, pixels: x = 4*col, y = 8*row */\n"
+        "extern const level_hazard_t level_hazards[%d];\n"
+        "#define LEVEL_NUM_CONVEYORS %du\n"
+        "typedef struct { int16_t x; int16_t y; uint16_t w; int8_t dir; } level_conveyor_t;"
+        "   /* a run of conveyor tiles: top-left px, width px (4 per tile), dir +1 right / -1 left */\n"
+        "extern const level_conveyor_t level_conveyors[%d];\n"
+        "#endif\n" % (src_name, cols, ROWS, stride, 4 * sc, 8 * sr, ne, nd,
+                      nh, nhd, nc, ncd))
     out = ["/* Generated from %s by tools/level2c.py. Do not edit. */" % src_name,
            '#include "level_data.h"', "",
            "const uint8_t level_bits[LEVEL_ROWS * LEVEL_STRIDE] = {"]
@@ -118,6 +160,22 @@ def render(src_name, cols, grid, sc, sr, enemies=()):
     else:
         out.append("    { 0, 0, 0 },")
     out.append("};")
+    out.append("")
+    out.append("const level_hazard_t level_hazards[%d] = {" % nhd)
+    if hazards:
+        for c, r, t in hazards:
+            out.append("    { %d, %d, %d }," % (4 * c, 8 * r, t))
+    else:
+        out.append("    { 0, 0, 0 },")
+    out.append("};")
+    out.append("")
+    out.append("const level_conveyor_t level_conveyors[%d] = {" % ncd)
+    if conveyors:
+        for r, c, tiles, ch in conveyors:
+            out.append("    { %d, %d, %d, %d }," % (4 * c, 8 * r, 4 * tiles, CONVEYOR_DIRS[ch]))
+    else:
+        out.append("    { 0, 0, 0, 0 },")
+    out.append("};")
     return "\n".join(out) + "\n", hdr
 
 
@@ -129,11 +187,13 @@ def main(argv):
     try:
         with open(src, "r", encoding="ascii", errors="strict", newline=None) as f:
             text = f.read()
-        cols, grid, sc, sr, enemies = parse_level(text, src.replace("\\", "/"))
+        cols, grid, sc, sr, enemies, hazards, conveyors = parse_level(
+            text, src.replace("\\", "/"))
     except (LevelError, OSError, UnicodeDecodeError) as e:
         sys.stderr.write("level2c: error: %s\n" % e)
         return 1
-    csrc, hdr = render(src.replace("\\", "/"), cols, grid, sc, sr, enemies)
+    csrc, hdr = render(src.replace("\\", "/"), cols, grid, sc, sr, enemies,
+                       hazards, conveyors)
     for path, content in ((outc, csrc), (outh, hdr)):
         d = os.path.dirname(path)
         if d:

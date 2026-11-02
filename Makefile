@@ -30,6 +30,8 @@ CFLAGS    += $(if $(START_STATE),-DSTART_STATE=$(START_STATE))
 CFLAGS    += $(if $(DEMO),-DDEMO_INPUT)
 # Debug: draw the ARM headroom bar at the top of the play screen (touch src/arm/display_list.c).
 CFLAGS    += $(if $(PERF),-DPERF_METER)
+# Debug: teleport the hero along the stage every 32 frames (touch src/arm/game.c and physics.c).
+CFLAGS    += $(if $(TOUR),-DDEBUG_TOUR -DTOUR_START=$(or $(TOUR_START),0))
 LDFLAGS    = $(ARCH_FLAGS) -nostartfiles -Wl,--gc-sections -Wl,--build-id=none \
              -Wl,-Map=$(ARM_MAP)
 
@@ -37,7 +39,7 @@ ARM_OBJS = build/arm/custom.o build/arm/main.o build/arm/physics.o \
            build/arm/display_list.o build/arm/audio.o \
            build/arm/level_data.o build/arm/enemies.o build/arm/shots.o \
            build/arm/health.o build/arm/fb.o build/arm/screens.o build/arm/game.o \
-           build/arm/art_data.o build/arm/intro.o
+           build/arm/art_data.o build/arm/intro.o build/arm/hazards.o
 ROM_SRCS = $(wildcard src/6502/*.asm) $(wildcard vendor/cdfjplus/*) $(LAYOUT)
 
 .PHONY: all run clean test

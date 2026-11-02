@@ -32,7 +32,9 @@ detection info. The overlay should read `262 / 60.0Hz => NTSC`.
 `make test` runs the level converter's tests. `make shot` runs Stella headless
 for `FRAMES` frames (default 120) and saves `build/shot.png`.
 
-Debug builds (touch `src/arm/game.c` first, since the flags don't trigger a rebuild):
+Debug builds (touch the `src/arm/*.c` files first, since the flags don't trigger a rebuild):
+`make TOUR=1 START_STATE=2` teleports the hero along the stage every 32 frames (`TOUR_START=n`
+picks where it begins), and `make PERF=1` adds the ARM headroom bar.
 `make START_STATE=1` starts on a screen (0 title, 1 stage select, 2 play), and
 `make DEMO=1` adds a scripted player that walks title, select and into the stage.
 The frame number `make shot` takes is not a count of game frames (it ran about
@@ -64,9 +66,9 @@ All names, icons and art are original.
 
 ## Levels
 
-A stage is a text file in `levels/` (currently `levels/stage1.txt`): 24 rows,
-a multiple of 8 columns (at least 40), `#` solid, `.` empty, `S` the hero's
-spawn (top-left corner). A tile is 4 px wide and 8 lines tall, so one screen is
+A stage is a text file in `levels/` (currently `levels/stage1.txt`, SAW MAN's
+lumber mill): 24 rows, a multiple of 8 columns (at least 40), `#` solid, `.` empty,
+`S` the hero's spawn (top-left corner). A tile is 4 px wide and 8 lines tall, so one screen is
 40 x 24 tiles. `tools/level2c.py` turns it into `build/gen/level_data.c/.h` at
 build time; `src/arm/level.h` reads it for both rendering and collision.
 
@@ -76,7 +78,11 @@ design: the hero is 4 x 2 tiles, jumps about 5 rows high, and clears gaps of up
 to about 7 columns. Falling off the bottom costs a hit point and respawns at `S`.
 Keep row 0 empty: the health pips are drawn over it. `W` places a walker
 (patrols its floor, turns at walls and edges) and `F` a flyer (patrols and
-bobs); up to 16 per stage.
+bobs); up to 16 per stage. Hazards are drawn in the playfield, so they never
+flicker and cost no sprite: `O` a saw that patrols sideways until it meets a
+solid tile, `U` a saw that sweeps up and down, `P` a crusher hanging from the
+tile above it (a 128-frame cycle, offset by its column), and `>` / `<` conveyor
+belt tiles, which are solid and carry the hero. Up to 24 hazards and 24 belt runs.
 
 ## Sprite art
 
@@ -132,6 +138,7 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/arm/input.h` | Joystick and fire bits passed from the 6507 |
 | `src/arm/enemies.c` | Walker and flyer behaviour, hero contact |
 | `src/arm/shots.c` | Hero bullets: fire, move, hit tiles and enemies |
+| `src/arm/hazards.c` | Saws, crushers and conveyor belts, drawn as playfield cells |
 | `src/arm/health.c` | Hit points and the invulnerability window |
 | `art/` | Sprite art text files, converted by `tools/art2c.py` |
 | `levels/` | Stage text files |

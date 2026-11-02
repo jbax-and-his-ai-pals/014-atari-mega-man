@@ -9,6 +9,7 @@
  * Falling off the bottom of the screen respawns the hero.
  */
 #include <stdint.h>
+#include "hazards.h"
 #include "input.h"
 #include "level.h"
 #include "physics.h"
@@ -18,6 +19,7 @@
 #define JUMP_SPEED  (-0x0480)       /* -4.5 scanlines/frame: rises about 40 lines */
 #define JUMP_CUT    (-0x0100)       /* rise speed cap once up is released */
 #define WALK_SPEED  0x0140          /* 1.25 px/frame */
+#define BELT_SPEED  0x00C0          /* 0.75 px/frame, carried by a conveyor belt */
 #define KNOCK_SPEED 0x0200          /* 2 px/frame away from what hit the hero */
 #define KNOCK_FRAMES 8              /* so about 16 px */
 #define KNOCK_HOP   (-0x0300)       /* small hop, -3 scanlines/frame */
@@ -163,6 +165,14 @@ int physics_step(unsigned pad)
     }
     move_y();
 
+    /* A conveyor belt under the hero's feet carries him along. */
+    if (on_ground && !knocked) {
+        const int belt = hazards_belt((int)(hero_x >> 8) + HERO_W / 2, (int)(hero_y >> 8) + HERO_H);
+
+        if (belt)
+            move_x(belt * BELT_SPEED);
+    }
+
     if ((hero_y >> 8) > RESPAWN_Y) {
         spawn();
         fell = 1;
@@ -187,6 +197,15 @@ int physics_hero_facing(void)
 {
     return facing;
 }
+
+#ifdef DEBUG_TOUR
+void physics_debug_place(int x, int y)
+{
+    hero_x = (int32_t)x << 8;
+    hero_y = (int32_t)y << 8;
+    hero_vy = 0;
+}
+#endif
 
 int physics_hero_row(void)
 {

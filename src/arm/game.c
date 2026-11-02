@@ -7,6 +7,7 @@
 #include "display_list.h"
 #include "enemies.h"
 #include "game.h"
+#include "hazards.h"
 #include "health.h"
 #include "input.h"
 #include "intro.h"
@@ -29,6 +30,7 @@ static void play_enter(void)
 {
     physics_init();
     enemies_init();
+    hazards_init();
     shots_init();
     health_init();
 }
@@ -72,11 +74,36 @@ static void move_cursor(unsigned pressed)
     cursor_y = (uint8_t)ny;
 }
 
+#ifdef DEBUG_TOUR
+/*
+ * Debug build (make TOUR=1): the hero is moved to a new place every 32 frames, so a
+ * run of headless snapshots shows the whole stage. Positions are level pixels.
+ */
+static void tour(void)
+{
+    static const int16_t spots[8][2] = {
+        { 160, 152 }, { 250, 128 }, { 420, 152 }, { 500, 152 },
+        { 730, 152 }, { 860, 152 }, { 1000, 152 }, { 1180, 152 },
+    };
+#ifndef TOUR_START
+#define TOUR_START 0
+#endif
+    const unsigned k = ((tick >> 5) + TOUR_START) & 7u;
+
+    if ((tick & 31u) == 0)
+        physics_debug_place(spots[k][0], spots[k][1]);
+}
+#endif
+
 static void play_frame(unsigned pad)
 {
+#ifdef DEBUG_TOUR
+    tour();
+#endif
     int hurt = physics_step(pad);   /* a fall into a pit already respawned the hero */
 
     enemies_step();
+    hazards_step();
     shots_step(pad);
     health_step();
 
@@ -92,6 +119,9 @@ static void play_frame(unsigned pad)
             if (enemies_get(idx, &ex, &ey, &type))
                 physics_knock(hx < ex ? -1 : 1);
             hurt = 1;
+        } else if (hazards_hit(hx + 2, physics_hero_row() + 2, HERO_W - 4, HERO_H - 4)) {
+            physics_knock(-physics_hero_facing());      /* thrown back the way it came */
+            hurt = 1;
         }
     }
 
@@ -99,6 +129,7 @@ static void play_frame(unsigned pad)
         /* Out of health: start over, with every enemy back in place. */
         physics_respawn();
         enemies_init();
+        hazards_init();
         shots_init();
         health_init();
     }

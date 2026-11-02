@@ -13,6 +13,11 @@ int physics_step(unsigned pad);
 /* Throw the hero away from a hit: dir is +1 (right) or -1 (left). Brief loss of control. */
 void physics_knock(int dir);
 
+#ifdef DEBUG_TOUR
+/* Debug builds only: put the hero at a level position, at rest. */
+void physics_debug_place(int x, int y);
+#endif
+
 /* Top scanline of the hero. May be outside 0..LINES-1 while it is off screen. */
 int physics_hero_row(void);
 

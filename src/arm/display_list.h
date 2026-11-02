@@ -36,7 +36,10 @@ typedef struct {
  */
 void display_sprites(const display_sprite_t *s, int n);
 
-/* No sprites or bullet this frame. */
+/* Turn playfield cell `cell` (0-39) of scanline `line` on or off, over what is there. */
+void display_pf_cell(int line, int cell, int on);
+
+/* No sprites this frame. */
 void display_no_sprites(void);
 
 /* One 16x16 sprite (an ART_* frame from art_data.h, mirrored if flip) at screen X
