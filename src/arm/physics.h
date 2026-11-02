@@ -9,7 +9,7 @@ void physics_step(unsigned pad);
 /* Top scanline of the hero. May be outside 0..LINES-1 while it is off screen. */
 int physics_hero_row(void);
 
-/* Left pixel of the hero, 0..160-HERO_W. */
+/* Left pixel of the hero in the level, 0..LEVEL_W_PX-HERO_W. */
 int physics_hero_x(void);
 
 #endif /* PHYSICS_H */

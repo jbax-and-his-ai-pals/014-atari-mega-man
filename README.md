@@ -1,8 +1,8 @@
-# Atari 2600 CDFJ+ platformer (Phase 1 scaffold)
+# Atari 2600 CDFJ+ platformer
 
 A 32 KB CDFJ+ ROM for the Atari 2600, with the game logic on the ARM coprocessor
-and the screen kernel on the 6507. This is the Phase 1 scaffold: a bouncing hero,
-a sweeping ledge, and a floor, all rendered through the datastream path.
+and the screen kernel on the 6507. So far: a hero you can walk and jump with
+(joystick and fire), across a scrolling tile-map stage.
 
 ## Build and run
 
@@ -19,6 +19,22 @@ make run
 the stats overlay (frame length and rate), the Thumb trap on fatal errors, and
 detection info. The overlay should read `262 / 60.0Hz => NTSC`.
 
+`make test` runs the level converter's tests. `make shot` runs Stella headless
+for `FRAMES` frames (default 120) and saves `build/shot.png`.
+
+## Levels
+
+A stage is a text file in `levels/` (currently `levels/stage1.txt`): 24 rows,
+a multiple of 8 columns (at least 40), `#` solid, `.` empty, `S` the hero's
+spawn (top-left corner). A tile is 4 px wide and 8 lines tall, so one screen is
+40 x 24 tiles. `tools/level2c.py` turns it into `build/gen/level_data.c/.h` at
+build time; `src/arm/level.h` reads it for both rendering and collision.
+
+The playfield can only scroll in whole 4 px columns, so the camera snaps to a
+column while the hero sprite moves pixel by pixel. Physics limits for level
+design: the hero is 4 x 2 tiles, jumps about 5 rows high, and clears gaps of up
+to about 7 columns. Falling off the bottom respawns at `S`.
+
 ## Layout
 
 | Path | What it is |
@@ -27,8 +43,12 @@ detection info. The overlay should read `262 / 60.0Hz => NTSC`.
 | `src/6502/kernel.asm` | Frame loop and visible kernel (76 cycles per line) |
 | `src/6502/vectors.asm` | Reset vector and CDFJ+ C stack and entry words |
 | `src/arm/main.c` | Frame entry, called once per frame in VBLANK |
-| `src/arm/physics.c` | Hero motion, 8.8 fixed point |
-| `src/arm/display_list.c` | Rebuilds the per-scanline tables every frame |
+| `src/arm/physics.c` | Hero motion and tile collision, 8.8 fixed point |
+| `src/arm/display_list.c` | Camera, and rebuilds the per-scanline tables every frame |
+| `src/arm/level.h` | Tile map access shared by rendering and physics |
+| `src/arm/input.h` | Joystick and fire bits passed from the 6507 |
+| `levels/` | Stage text files |
+| `tests/` | Level converter tests (`make test`) |
 | `src/arm/audio.c` | Stub |
 | `include/layout.inc` | Shared memory map, read by DASM and by `tools/gen_layout.py` |
 | `include/cdfj.h` | Datastream pointer and increment helpers |

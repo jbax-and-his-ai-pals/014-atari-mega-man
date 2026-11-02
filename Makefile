@@ -28,10 +28,11 @@ LDFLAGS    = $(ARCH_FLAGS) -nostartfiles -Wl,--gc-sections -Wl,--build-id=none \
              -Wl,-Map=$(ARM_MAP)
 
 ARM_OBJS = build/arm/custom.o build/arm/main.o build/arm/physics.o \
-           build/arm/display_list.o build/arm/audio.o
+           build/arm/display_list.o build/arm/audio.o \
+           build/arm/level_data.o
 ROM_SRCS = $(wildcard src/6502/*.asm) $(wildcard vendor/cdfjplus/*) $(LAYOUT)
 
-.PHONY: all run clean
+.PHONY: all run clean test
 all: $(ROM)
 
 # Shared memory map -> C header
@@ -39,8 +40,21 @@ $(LAYOUT_H): $(LAYOUT) tools/gen_layout.py
 	@mkdir -p $(dir $@)
 	$(PY) tools/gen_layout.py $(LAYOUT) $@
 
+# Level text -> C data (one generator run produces both files)
+LEVEL_SRC = levels/stage1.txt
+build/gen/level_data.c build/gen/level_data.h &: $(LEVEL_SRC) tools/level2c.py
+	@mkdir -p $(dir $@)
+	$(PY) tools/level2c.py $(LEVEL_SRC) build/gen/level_data.c build/gen/level_data.h
+
+build/arm/level_data.o: build/gen/level_data.c build/gen/level_data.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test:
+	$(PY) -m unittest discover -s tests -v
+
 # ARM C and boot code
-build/arm/%.o: src/arm/%.c $(LAYOUT_H) $(wildcard include/*.h) $(wildcard src/arm/*.h)
+build/arm/%.o: src/arm/%.c $(LAYOUT_H) build/gen/level_data.h $(wildcard include/*.h) $(wildcard src/arm/*.h)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
