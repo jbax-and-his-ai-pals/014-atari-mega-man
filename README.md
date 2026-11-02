@@ -1,4 +1,6 @@
-# Atari 2600 CDFJ+ platformer
+# Meh-ga Man
+
+An Atari 2600 CDFJ+ platformer.
 
 A 32 KB CDFJ+ ROM for the Atari 2600, with the game logic on the ARM coprocessor
 and the screen kernel on the 6507. So far: a hero who walks, jumps and shoots

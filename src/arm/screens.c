@@ -55,10 +55,10 @@ void screen_title_enter(void)
     int x;
 
     fb_clear();
-    fb_text(centered("BOLT", 2), 22, "BOLT", 2, 6);
-    fb_fill(4, 58, VIS_W - 2, 2, 1);
-    fb_text(centered("RUNNER", 1), 66, "RUNNER", 1, 4);
-    fb_fill(4, 92, VIS_W - 2, 2, 1);
+    fb_fill(4, 10, VIS_W - 2, 2, 1);
+    fb_text(centered("MEH-GA", 1), 18, "MEH-GA", 1, 5);
+    fb_text(centered("MAN", 2), 48, "MAN", 2, 6);
+    fb_fill(4, 84, VIS_W - 2, 2, 1);
 
     /* Floor: solid, with a groove and brick joints. */
     fb_fill(VIS_COL, TITLE_FLOOR, VIS_W, 24, 1);
@@ -156,7 +156,7 @@ void screen_select_enter(int gx, int gy)
 void screen_select_frame(int gx, int gy, unsigned tick)
 {
     const int stage = stage_at(gx, gy);
-    const char *name = stage >= 0 ? stage_name(stage) : "BOLT";
+    const char *name = stage >= 0 ? stage_name(stage) : "MEH-GA";
 
     if (gx != prev_gx || gy != prev_gy) {
         draw_cursor(prev_gx, prev_gy, 0);
