@@ -25,8 +25,9 @@ void fb_fill(int col, int line, int w, int h, int set);
 void fb_row8(int col, int line, int h, unsigned row);
 
 /*
- * Text in a 3x5 font (A-Z, 0-9, space - . ! ?). Each font pixel is sx cells wide
- * and sy lines tall; characters advance by 4*sx cells.
+ * Text in a 5-row font (A-Z, 0-9, space - . ! ?). Letters are 3 pixels wide,
+ * except M, N and W which are 5. Each font pixel is sx cells wide and sy lines
+ * tall, with a one-pixel gap between characters.
  */
 void fb_text(int col, int line, const char *s, int sx, int sy);
 int fb_text_width(const char *s, int sx);

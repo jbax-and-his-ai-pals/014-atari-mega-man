@@ -107,25 +107,43 @@ void fb_row8(int col, int line, int h, unsigned row)
     }
 }
 
+/*
+ * M, N and W need five columns to read as themselves: at three they turn into
+ * H. Their rows are 5 bits, bit 4 leftmost.
+ */
+static const uint8_t wide_font[3][5] = {
+    {0x11, 0x1B, 0x15, 0x11, 0x11},     /* M */
+    {0x11, 0x19, 0x15, 0x13, 0x11},     /* N */
+    {0x11, 0x11, 0x15, 0x1B, 0x11},     /* W */
+};
+
+static int wide_index(char c)
+{
+    return c == 'M' ? 0 : c == 'N' ? 1 : c == 'W' ? 2 : -1;
+}
+
 int fb_text_width(const char *s, int sx)
 {
-    int n = 0;
+    int w = 0;
 
-    while (s[n])
-        n++;
-    return n ? n * 4 * sx - sx : 0;
+    for (; *s; s++)
+        w += ((wide_index(*s) >= 0 ? 5 : 3) + 1) * sx;
+    return w ? w - sx : 0;
 }
 
 void fb_text(int col, int line, const char *s, int sx, int sy)
 {
-    for (; *s; s++, col += 4 * sx) {
-        const uint8_t *g = font[glyph_index(*s)];
+    for (; *s; s++) {
+        const int wi = wide_index(*s);
+        const int gw = wi >= 0 ? 5 : 3;
+        const uint8_t *g = wi >= 0 ? wide_font[wi] : font[glyph_index(*s)];
         int r, c;
 
         for (r = 0; r < 5; r++)
-            for (c = 0; c < 3; c++)
-                if ((g[r] >> (2 - c)) & 1)
+            for (c = 0; c < gw; c++)
+                if ((g[r] >> (gw - 1 - c)) & 1)
                     fb_fill(col + c * sx, line + r * sy, sx, sy, 1);
+        col += (gw + 1) * sx;
     }
 }
 
