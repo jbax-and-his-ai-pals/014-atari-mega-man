@@ -13,6 +13,8 @@
 VBLANK_TIMER_60   = 43      ; TIM64T value for the VBLANK interval (NTSC)
 OVERSCAN_TIMER_60 = 35      ; TIM64T value for the overscan interval (NTSC)
 
+hero_x            = $80     ; zero-page copy of the hero X fetched from the ARM
+
 Reset:
 	sei
 	cld
@@ -41,23 +43,33 @@ FrameStart:
 	sta VBLANK
 	lda #VBLANK_TIMER_60
 	sta TIM64T
+	; Inputs -> display data (DD_IN_SWCHA, DD_IN_INPT4) for the ARM to read.
+	; Two DSPTR writes set the write offset (0 here), then DSWRITE stores and
+	; advances one byte at a time.
+	lda #0
+	sta DSPTR
+	sta DSPTR
+	lda SWCHA
+	sta DSWRITE
+	lda INPT4
+	sta DSWRITE
+
 	lda #255
 	sta CALLFN                      ; ARM: game update; returns when done
 	lda #(FF_OFFSET+STREAM_COLUPF)  ; fetch the frame's playfield color
 	sta COLUPF
 
-	; Hero position. Line A strobes RESP0 at clock ~168 and RESP1 9 px later,
-	; then fine-tunes P1 by -1 px, so P1 sits 8 px to the right of P0.
-	sta WSYNC                       ; line A starts here (cycle 0)
-	bit $00                         ; 3 cycles
-	REPEAT 25
-	nop                             ; 25 x 2 cycles; 3 + 50 = 53 cycles
-	REPEND
-	sta RESP0                       ; ends at cycle 56 (clock 168)
-	sta RESP1                       ; ends at cycle 59 (clock 177)
-	lda #$10
-	sta HMP1                        ; fine motion, -1 px
-	sta WSYNC                       ; line B
+	; Hero position: P0 at hero_x, P1 8 px to its right.
+	lda #(FF_OFFSET+STREAM_HEROX)
+	sta hero_x
+	ldx #0
+	jsr PosObject
+	lda hero_x
+	clc
+	adc #8
+	ldx #1
+	jsr PosObject
+	sta WSYNC
 	sta HMOVE                       ; apply fine motion in HBLANK
 
 .waitVBLANK:
@@ -114,6 +126,24 @@ Overscan:
 	lda INTIM
 	bne .waitOverscan
 	jmp FrameStart
+
+;@ Set the horizontal position of object X (0 = P0, 1 = P1) to A (0-159).
+;@ Coarse position: one RESPx strobe after a divide-by-15 loop; the remainder
+;@ becomes the fine motion in HMPx. Takes one scanline; HMOVE must follow.
+PosObject:
+	sec
+	sta WSYNC
+.divide:
+	sbc #15
+	bcs .divide
+	eor #7
+	asl
+	asl
+	asl
+	asl
+	sta HMP0,x
+	sta RESP0,x
+	rts
 
 	IF * > $1FF3
 	ECHO "kernel overflows bank 0 (6507 $1FF3)"

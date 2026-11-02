@@ -49,9 +49,39 @@ toolchain\stella\Stella.exe -basedir toolchain\stella-config -dev.settings 1 -de
 - The community CDFJ+ template (see `vendor/cdfjplus/README.md`) builds with
   this toolchain into a 32 KB ROM. The ROM has the `PLUSCDFJ` v1 signature and
   correct C stack/entry words, and Stella 7.0 launches it in developer mode.
-  Not yet confirmed on screen: that Stella reports CDFJ+ and shows the
-  template's display.
+  Confirmed on screen in Stella 7.0c with the Phase 1 scaffold (see Lessons
+  from Phase 1 below).
 - `-mcpu=arm7tdmi -mthumb` selects the `thumb/nofp` multilib.
+
+## Lessons from Phase 1
+
+Checked while bringing up the Phase 1 scaffold in Stella 7.0c. The short version
+is in `../README.md` under "Things that matter for later work".
+
+- **RAM is random at power-on.** In developer mode Stella randomizes RAM. The boot
+  code in `src/arm/boot/custom.S` clears `.bss` and copies `.data` only when the
+  counter word at `0x40000024` goes from 0 to 1. That is not guaranteed, so C code
+  must not rely on zeroed `.bss` or initialized `.data`. `main.c` runs its
+  one-time init when the word at `0x40001FE0` does not hold its magic value, then
+  writes the value. That word sits just above the C stack top, `0x40001FDC`.
+- **Datastream increments must be written.** The pointers were correct, but the
+  screen was noise while the increments were random. `display_list.c` now sets
+  the pointer and increment for every stream each frame.
+- **ARM time counts against VBLANK.** Stella keeps the TIA running while the ARM
+  executes CALLFN. One over-budget ARM frame showed as 456 scanlines, and Stella
+  switched to PAL detection. The stats overlay must read `262 / 60.0Hz => NTSC`.
+- **SETMODE is `$00` at boot.** That means fast fetch on and no audio mode, the same
+  as the template. `$F0` (music mode) enables the driver's audio interrupt, which
+  is not used yet.
+- **Datastream register layout** matches the template's `defines_cdfjplus.c`:
+  pointers at `0x40000098` (offset << 16), increments at `0x40000124`
+  ((whole << 8) | frac), and display data at `0x40000800`.
+- **Verified on screen in Stella 7.0c:** a 262-line NTSC frame, an asymmetric
+  playfield, and a 16-px hero made of two sprites with no seam.
+- **Headless screenshots:** `make shot` (or `python tools/snap.py`) runs Stella
+  for N frames through a debugger autoexec script and saves `build/shot.png`
+  (320x228, the TIA image without the stats overlay). It cannot report the
+  scanline count or inject input, so frame length still needs `make run`.
 
 ## Constraints found (read before writing ARM code)
 

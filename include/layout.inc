@@ -10,8 +10,12 @@ DRV_INC_ARM   = $40000124   ; driver datastream increments, 4 bytes each
 ; Scanlines per frame that the kernel draws
 LINES         = 192
 
+; Inputs. Each frame the 6507 writes these with DSPTR/DSWRITE before CALLFN.
+DD_IN_SWCHA   = $000        ; SWCHA: P0 joystick in D7-D4 (0 = pressed)
+DD_IN_INPT4   = $001        ; INPT4: P0 fire in D7 (0 = pressed)
+
 ; Datastreams. The kernel reads stream n with LDA #(FF_OFFSET + n).
-NUM_STREAMS   = 12
+NUM_STREAMS   = 13
 STREAM_PF0L   = 0
 STREAM_PF1L   = 1
 STREAM_PF2L   = 2
@@ -24,6 +28,7 @@ STREAM_GRP1   = 8           ; GRP1, one byte per scanline
 STREAM_COLUP0 = 9           ; COLUP0, one byte per scanline
 STREAM_COLUP1 = 10          ; COLUP1, one byte per scanline
 STREAM_COLUPF = 11          ; COLUPF, one byte, read once per frame in VBLANK
+STREAM_HEROX  = 12          ; hero X (0-143, P0; P1 is 8 px right), once per frame
 
 ; Display data tables (byte offsets from DD_BASE_ARM, 192 bytes each unless noted)
 DD_PF0L       = $100
@@ -38,3 +43,4 @@ DD_GRP1       = $700
 DD_COLUP0     = $7C0
 DD_COLUP1     = $880
 DD_COLUPF     = $940        ; one byte
+DD_HEROX      = $941        ; one byte

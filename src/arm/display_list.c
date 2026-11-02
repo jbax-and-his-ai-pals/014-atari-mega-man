@@ -1,11 +1,12 @@
 /*
  * Builds the per-scanline tables the 6507 kernel streams in.
  *
- * Playfield: a sky-colored background, a floating ledge (8 scanlines with a
- * 4-pixel gap that sweeps across it), and a full-width floor at the bottom.
- * The playfield is asymmetric: the left and right 20 bits are stored separately.
+ * Playfield: a sky-colored background, a floating ledge, and a full-width
+ * floor, with the geometry from level.h. The playfield is asymmetric: the left
+ * and right 20 bits are stored separately.
  *
- * Hero: a 16x16 test sprite (GRP0 + GRP1) that bounces and cycles its color.
+ * Hero: a 16x16 test sprite (GRP0 + GRP1) that cycles its color. Its X goes to
+ * the 6507 through STREAM_HEROX; its rows are placed in the GRP tables here.
  *
  * The whole table is rebuilt every frame, so nothing here depends on state
  * left over from boot. The sky and floor rows come from constants, which keeps
@@ -14,19 +15,24 @@
 #include <stdint.h>
 #include "cdfj.h"
 #include "display_list.h"
+#include "level.h"
 #include "physics.h"
 
 /* Stream n -> display-data table. Order matches STREAM_* in layout.inc. */
 static const uint16_t stream_base[NUM_STREAMS] = {
     DD_PF0L, DD_PF1L, DD_PF2L, DD_PF0R, DD_PF1R, DD_PF2R,
-    DD_BK, DD_GRP0, DD_GRP1, DD_COLUP0, DD_COLUP1, DD_COLUPF
+    DD_BK, DD_GRP0, DD_GRP1, DD_COLUP0, DD_COLUP1, DD_COLUPF,
+    DD_HEROX
 };
 
-#define FLOOR_TOP   160u
-#define LEDGE_TOP   128u
-#define LEDGE_ROWS  8u
-#define HERO_ROWS   16u
-#define ALL_40      0xFFFFFFFFFFull
+#define HERO_ROWS   ((unsigned)HERO_H)
+
+/* PosObject in kernel.asm places a sprite this many pixels left of the value
+ * it is given; measured with tools/snap.py. */
+#define HERO_X_TRIM 3
+
+/* Ledge as 40 playfield bits (bit n covers pixels 4n..4n+3). */
+#define LEDGE_MASK  (((1ull << ((LEDGE_X1 - LEDGE_X0) / 4)) - 1) << (LEDGE_X0 / 4))
 
 /* Playfield bytes for a row with all 20 bits set in one half (PF0, PF1, PF2). */
 static const uint8_t full_half[3] = { 0xF0, 0xFF, 0xFF };
@@ -83,15 +89,13 @@ static void pf_put(unsigned line, const uint8_t left[3], const uint8_t right[3])
 
 void display_build(void)
 {
-    /* A 4-bit gap moves one pixel every 4 frames across the 40-bit ledge. */
-    const uint64_t ledge = ALL_40 & ~(0xFull << ((frame >> 2) & 31u));
     const int hero_top = physics_hero_row();
     uint8_t ledge_left[3], ledge_right[3];
     unsigned line;
     unsigned n;
 
-    pack_half(ledge, 0, ledge_left);
-    pack_half(ledge, 20, ledge_right);
+    pack_half(LEDGE_MASK, 0, ledge_left);
+    pack_half(LEDGE_MASK, 20, ledge_right);
 
     for (line = 0; line < LINES; line++) {
         int rel = (int)line - hero_top;
@@ -122,6 +126,7 @@ void display_build(void)
     }
 
     dd_put(DD_COLUPF, 0x1Eu);       /* platform color: gold */
+    dd_put(DD_HEROX, (uint8_t)(physics_hero_x() + HERO_X_TRIM));
 
     /* Point each stream at its table, and step one byte per fetch. */
     for (n = 0; n < NUM_STREAMS; n++) {

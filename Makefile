@@ -68,3 +68,7 @@ run: $(ROM)
 
 clean:
 	rm -rf build
+
+# Headless screenshot: build, then run Stella unattended for N frames and save a PNG.
+shot: $(ROM)
+	$(PY) tools/snap.py $(ROM) --frames $(or $(FRAMES),120) --out build/shot.png

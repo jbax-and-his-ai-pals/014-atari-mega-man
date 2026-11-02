@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "audio.h"
 #include "display_list.h"
+#include "input.h"
 #include "physics.h"
 
 /*
@@ -23,7 +24,7 @@ int main(void)
         audio_init();
     }
 
-    physics_step();
+    physics_step(input_read());
     audio_update();
     display_build();
     return 0;
