@@ -68,6 +68,18 @@ Keep row 0 empty: the health pips are drawn over it. `W` places a walker
 (patrols its floor, turns at walls and edges) and `F` a flyer (patrols and
 bobs); up to 16 per stage.
 
+## Sprite art
+
+Sprites are text pictures in `art/sprites.txt`: 16 rows per frame, each row a
+color letter and 16 pixels (`#` lit, `.` empty). `tools/art2c.py` converts it to
+`build/gen/art_data.c/.h` at build time (`make test` covers the converter), and the
+header gives every frame an `ART_<SPRITE>_<FRAME>` index. All art faces right and
+the renderer mirrors it for left. Every row has its own color, because the kernel
+streams a color per scanline for the sprite pair; two colors within one row would
+cost a second color write per line, which the loop has no cycles for. The hero has
+idle, three run frames and a jump pose, chosen from the physics state; the walker
+and flyer have two frames each.
+
 ## Sprites
 
 Every object is 16x16, drawn with the P0 + P1 pair. The kernel does `HMOVE` on
@@ -107,6 +119,7 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/arm/enemies.c` | Walker and flyer behaviour, hero contact |
 | `src/arm/shots.c` | Hero bullets: fire, move, hit tiles and enemies |
 | `src/arm/health.c` | Hit points and the invulnerability window |
+| `art/` | Sprite art text files, converted by `tools/art2c.py` |
 | `levels/` | Stage text files |
 | `tests/` | Level converter tests (`make test`) |
 | `src/arm/audio.c` | Stub |

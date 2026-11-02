@@ -3,9 +3,6 @@
 
 #include <stdint.h>
 
-/* Sprite art, indexed into the table in display_list.c. */
-enum { ART_HERO, ART_WALKER, ART_FLYER };
-
 /* Fill the per-scanline tables for the play screen and reset the datastream
  * pointers. VBLANK only. */
 void display_build(void);
@@ -22,8 +19,9 @@ void display_sky(uint8_t hue, unsigned lum0);
 /* No sprites or bullet this frame. */
 void display_no_sprites(void);
 
-/* One 16x16 sprite at screen X (0-143) and top line, which may be negative. */
-void display_one_sprite(int x, int top, int art_id);
+/* One 16x16 sprite (an ART_* frame from art_data.h, mirrored if flip) at screen X
+ * (0-143) and top line, which may be negative. */
+void display_one_sprite(int x, int top, int frame, int flip);
 
 /* Playfield color, and point the streams at their tables. Call last. */
 void display_finish(uint8_t colupf);

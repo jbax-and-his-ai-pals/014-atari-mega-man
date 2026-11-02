@@ -20,6 +20,8 @@ int  enemies_get(int i, int *x, int *y, unsigned *type);
 /* 1 if the hero box (level pixels) touches any live enemy; boxes are shrunk by
  * 2 px on each side for fairness. */
 int  enemies_touch(int hx, int hy, int hw, int hh);
+/* The way enemy i is heading: +1 right, -1 left. */
+int  enemies_dir(int i);
 /* Index of the first live enemy whose full box overlaps the given box, or -1. */
 int  enemies_hit(int x, int y, int w, int h);
 /* Remove enemy i until the next enemies_init(). */

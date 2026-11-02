@@ -5,6 +5,7 @@
  * Statics are assigned in the *_enter() functions: RAM is not zeroed at boot.
  */
 #include <stdint.h>
+#include "art_data.h"
 #include "display_list.h"
 #include "fb.h"
 #include "screens.h"
@@ -79,7 +80,11 @@ void screen_title_frame(unsigned tick)
 
     fb_present();
     display_sky(0x80u, 1);
-    display_one_sprite(8 + (int)((tick >> 1) & 127u), HERO_RUN_Y, ART_HERO);
+    {
+        static const uint8_t run[4] = { ART_HERO_RUN_A, ART_HERO_RUN_P, ART_HERO_RUN_B, ART_HERO_RUN_P };
+
+        display_one_sprite(8 + (int)((tick >> 1) & 127u), HERO_RUN_Y, run[(tick >> 2) & 3u], 0);
+    }
     display_finish(COLOR_PF);
 }
 

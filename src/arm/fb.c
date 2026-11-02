@@ -16,7 +16,7 @@
 #define R2(n) n, n + 2 * 64, n + 1 * 64, n + 3 * 64
 #define R4(n) R2(n), R2(n + 2 * 16), R2(n + 1 * 16), R2(n + 3 * 16)
 #define R6(n) R4(n), R4(n + 2 * 4), R4(n + 1 * 4), R4(n + 3 * 4)
-static const uint8_t rev8[256] = { R6(0), R6(2), R6(1), R6(3) };
+const uint8_t fb_rev8[256] = { R6(0), R6(2), R6(1), R6(3) };
 
 /* 3x5 font; each row is 3 bits with bit 2 the left column. */
 static const uint8_t font[][5] = {
@@ -94,7 +94,7 @@ void fb_fill(int col, int line, int w, int h, int set)
 
 void fb_row8(int col, int line, int h, unsigned row)
 {
-    const unsigned bits = (unsigned)rev8[row & 0xFFu] << (col & 7);
+    const unsigned bits = (unsigned)fb_rev8[row & 0xFFu] << (col & 7);
     const int b = col >> 3;
     int y;
 
@@ -150,7 +150,7 @@ void fb_text(int col, int line, const char *s, int sx, int sy)
 void fb_pack_half(uint32_t bits, uint8_t out[3])
 {
     out[0] = (uint8_t)((bits & 0x0Fu) << 4);
-    out[1] = rev8[(bits >> 4) & 0xFFu];
+    out[1] = fb_rev8[(bits >> 4) & 0xFFu];
     out[2] = (uint8_t)((bits >> 12) & 0xFFu);
 }
 

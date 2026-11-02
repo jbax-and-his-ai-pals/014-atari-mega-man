@@ -149,6 +149,11 @@ int enemies_get(int i, int *x, int *y, unsigned *type)
     return 1;
 }
 
+int enemies_dir(int i)
+{
+    return (i >= 0 && i < (int)e_n) ? (int)e_dir[i] : 1;
+}
+
 int enemies_hit(int x, int y, int w, int h)
 {
     int i;

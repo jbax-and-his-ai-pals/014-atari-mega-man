@@ -34,7 +34,8 @@ LDFLAGS    = $(ARCH_FLAGS) -nostartfiles -Wl,--gc-sections -Wl,--build-id=none \
 ARM_OBJS = build/arm/custom.o build/arm/main.o build/arm/physics.o \
            build/arm/display_list.o build/arm/audio.o \
            build/arm/level_data.o build/arm/enemies.o build/arm/shots.o \
-           build/arm/health.o build/arm/fb.o build/arm/screens.o build/arm/game.o
+           build/arm/health.o build/arm/fb.o build/arm/screens.o build/arm/game.o \
+           build/arm/art_data.o
 ROM_SRCS = $(wildcard src/6502/*.asm) $(wildcard vendor/cdfjplus/*) $(LAYOUT)
 
 .PHONY: all run clean test
@@ -55,11 +56,21 @@ build/arm/level_data.o: build/gen/level_data.c build/gen/level_data.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Sprite art text -> C data
+ART_SRC = art/sprites.txt
+build/gen/art_data.c build/gen/art_data.h &: $(ART_SRC) tools/art2c.py
+	@mkdir -p $(dir $@)
+	$(PY) tools/art2c.py $(ART_SRC) build/gen/art_data.c build/gen/art_data.h
+
+build/arm/art_data.o: build/gen/art_data.c build/gen/art_data.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 test:
 	$(PY) -m unittest discover -s tests -v
 
 # ARM C and boot code
-build/arm/%.o: src/arm/%.c $(LAYOUT_H) build/gen/level_data.h $(wildcard include/*.h) $(wildcard src/arm/*.h)
+build/arm/%.o: src/arm/%.c $(LAYOUT_H) build/gen/level_data.h build/gen/art_data.h $(wildcard include/*.h) $(wildcard src/arm/*.h)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

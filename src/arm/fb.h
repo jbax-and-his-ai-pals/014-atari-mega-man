@@ -16,6 +16,9 @@
 #define FB_COLS   40
 #define FB_LINES  192
 
+/* Bit-reverse of every byte value (framebuffer cells and sprite rows read opposite ways). */
+extern const uint8_t fb_rev8[256];
+
 void fb_clear(void);
 
 /* Set (or clear) the rectangle of cells col.., line.., w cells wide, h lines tall. */

@@ -19,6 +19,10 @@ int physics_hero_row(void);
 /* Left pixel of the hero in the level, 0..LEVEL_W_PX-HERO_W. */
 int physics_hero_x(void);
 
+/* Which picture the hero should wear. */
+enum { POSE_IDLE, POSE_RUN_A, POSE_RUN_P, POSE_RUN_B, POSE_JUMP };
+int physics_hero_pose(void);
+
 /* +1 facing right, -1 facing left (the last direction walked). */
 int physics_hero_facing(void);
 

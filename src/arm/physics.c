@@ -32,6 +32,8 @@ static unsigned prev_pad;
 static int facing;                  /* +1 right, -1 left */
 static int32_t knock_vx;            /* 8.8 px/frame while knocked back */
 static unsigned knock_t;            /* frames of knockback left */
+static unsigned walking;            /* the hero walked this frame */
+static unsigned run_anim;           /* frames spent walking, for the run cycle */
 
 static void spawn(void)
 {
@@ -42,6 +44,8 @@ static void spawn(void)
     facing    = 1;
     knock_vx  = 0;
     knock_t   = 0;
+    walking   = 0;
+    run_anim  = 0;
 }
 
 void physics_knock(int dir)
@@ -137,14 +141,17 @@ int physics_step(unsigned pad)
     int fell = 0;
 
     /* While knocked back the controls are ignored, and the hop is not cut short. */
+    walking = 0;
     if (knocked) {
         knock_t--;
         move_x(knock_vx);
     } else if (pad & PAD_LEFT) {
         facing = -1;
+        walking = 1;
         move_x(-WALK_SPEED);
     } else if (pad & PAD_RIGHT) {
         facing = 1;
+        walking = 1;
         move_x(WALK_SPEED);
     }
 
@@ -161,8 +168,19 @@ int physics_step(unsigned pad)
         fell = 1;
     }
 
+    run_anim = (walking && on_ground) ? run_anim + 1 : 0;
     prev_pad = pad;
     return fell;
+}
+
+int physics_hero_pose(void)
+{
+    /* Run cycle: stride, passing, other stride, passing; 4 frames each. */
+    static const uint8_t cycle[4] = { POSE_RUN_A, POSE_RUN_P, POSE_RUN_B, POSE_RUN_P };
+
+    if (!on_ground)
+        return POSE_JUMP;
+    return run_anim ? cycle[(run_anim >> 2) & 3u] : POSE_IDLE;
 }
 
 int physics_hero_facing(void)
