@@ -40,6 +40,11 @@ void physics_init(void)
     prev_pad = 0;
 }
 
+void physics_respawn(void)
+{
+    spawn();
+}
+
 /* Any solid tile under the pixel rectangle x0..x1, y0..y1 (inclusive)? */
 static int hits(int x0, int x1, int y0, int y1)
 {

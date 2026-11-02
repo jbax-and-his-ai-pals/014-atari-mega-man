@@ -3,6 +3,9 @@
 
 void physics_init(void);
 
+/* Put the hero back at the level's spawn point, at rest. */
+void physics_respawn(void);
+
 /* Advance one frame. pad is a PAD_* bit set from input.h. */
 void physics_step(unsigned pad);
 

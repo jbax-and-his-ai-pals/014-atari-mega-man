@@ -6,14 +6,20 @@
 ;@ Visible kernel: one scanline per pass of the loop, 76 CPU cycles.
 ;@ Cycle numbers count from the start of the line (after WSYNC). The TIA
 ;@ color clock is 3x the CPU cycle, so a write that completes at cycle c lands at clock 3c.
-;@   left  PF0/PF1/PF2 land at clocks 15, 45, 60  (needed by 68, 84, 116)
-;@   right PF0/PF1/PF2 land at clocks 144, 159, 174 (needed by 148, 164, 196)
-;@ Sprite graphics and colors land before the hero's pixels (clock 75-120).
+;@
+;@ Every line starts with HMOVE, so the sprite pair drifts by the HM value the
+;@ ARM streams in (up to 7 px left or 8 px right per line). That is how one pair
+;@ of sprites moves between objects down the screen without a repositioning
+;@ line. HMOVE blanks the left 8 pixels of each line.
+;@   GRP0/GRP1 land in HBLANK (clocks 24, 39)
+;@   left  PF0/PF1/PF2 land at clocks 54, 69, 84   (needed by 68, 84, 116)
+;@   right PF0/PF1/PF2 land at clocks 123, 138, 153 (windows 84-148, 116-164, 148-196)
+;@   HM, COLUP and COLUBK are written late in the line for the next line.
 
 VBLANK_TIMER_60   = 43      ; TIM64T value for the VBLANK interval (NTSC)
 OVERSCAN_TIMER_60 = 35      ; TIM64T value for the overscan interval (NTSC)
 
-hero_x            = $80     ; zero-page copy of the hero X fetched from the ARM
+top_x             = $80     ; zero-page copy of the top sprite X fetched from the ARM
 
 Reset:
 	sei
@@ -59,18 +65,32 @@ FrameStart:
 	lda #(FF_OFFSET+STREAM_COLUPF)  ; fetch the frame's playfield color
 	sta COLUPF
 
-	; Hero position: P0 at hero_x, P1 8 px to its right.
-	lda #(FF_OFFSET+STREAM_HEROX)
-	sta hero_x
+	; Sprite pair position at the top: P0 at top_x, P1 8 px to its right.
+	lda #(FF_OFFSET+STREAM_TOPX)
+	sta top_x
 	ldx #0
 	jsr PosObject
-	lda hero_x
+	lda top_x
 	clc
 	adc #8
 	ldx #1
 	jsr PosObject
 	sta WSYNC
-	sta HMOVE                       ; apply fine motion in HBLANK
+	sta HMOVE                       ; 3: apply fine motion in HBLANK
+	; Entry 0 of the next-line tables: line 0's color, background and motion.
+	lda #(FF_OFFSET+STREAM_COLUP)   ; 5
+	sta COLUP0                      ; 8
+	sta COLUP1                      ; 11
+	lda #(FF_OFFSET+STREAM_BK)      ; 13
+	sta COLUBK                      ; 16
+	nop                             ; 18
+	nop                             ; 20
+	nop                             ; 22
+	nop                             ; 24
+	nop                             ; 26
+	lda #(FF_OFFSET+STREAM_HM)      ; 28
+	sta HMP0                        ; 31: HMxx left alone for 24 cycles after HMOVE
+	sta HMP1                        ; 34
 
 .waitVBLANK:
 	lda INTIM
@@ -82,31 +102,33 @@ FrameStart:
 
 VisibleLoop:
 	sta WSYNC                       ; cycle 0 of the visible line
-	lda #(FF_OFFSET+STREAM_PF0L)    ; cycles 0-1
-	sta PF0                         ; cycles 2-4, lands at clock 15
-	lda #(FF_OFFSET+STREAM_BK)      ; cycles 5-6
-	sta COLUBK                      ; cycles 7-9, lands at clock 30
-	lda #(FF_OFFSET+STREAM_PF1L)    ; cycles 10-11
-	sta PF1                         ; cycles 12-14, lands at clock 45
-	lda #(FF_OFFSET+STREAM_PF2L)    ; cycles 15-16
-	sta PF2                         ; cycles 17-19, lands at clock 60
-	lda #(FF_OFFSET+STREAM_GRP0)    ; cycles 20-21
-	sta GRP0                        ; cycles 22-24, lands at clock 75
-	lda #(FF_OFFSET+STREAM_GRP1)    ; cycles 25-26
-	sta GRP1                        ; cycles 27-29, lands at clock 90
-	lda #(FF_OFFSET+STREAM_COLUP0)  ; cycles 30-31
-	sta COLUP0                      ; cycles 32-34, lands at clock 105
-	lda #(FF_OFFSET+STREAM_COLUP1)  ; cycles 35-36
-	sta COLUP1                      ; cycles 37-39, lands at clock 120
-	bit $00                         ; cycles 40-42: wait for the right-half window
-	lda #(FF_OFFSET+STREAM_PF0R)    ; cycles 43-44
-	sta PF0                         ; cycles 45-47, lands at clock 144
-	lda #(FF_OFFSET+STREAM_PF1R)    ; cycles 48-49
-	sta PF1                         ; cycles 50-52, lands at clock 159
-	lda #(FF_OFFSET+STREAM_PF2R)    ; cycles 53-54
-	sta PF2                         ; cycles 55-57, lands at clock 174
-	dex                             ; cycles 58-59
-	bne VisibleLoop                 ; cycles 60-62; the next WSYNC begins by cycle 63
+	sta HMOVE                       ; 3: drift the sprite pair
+	lda #(FF_OFFSET+STREAM_GRP0)    ; 5
+	sta GRP0                        ; 8, clock 24 (HBLANK)
+	lda #(FF_OFFSET+STREAM_GRP1)    ; 10
+	sta GRP1                        ; 13, clock 39 (HBLANK)
+	lda #(FF_OFFSET+STREAM_PF0L)    ; 15
+	sta PF0                         ; 18, clock 54
+	lda #(FF_OFFSET+STREAM_PF1L)    ; 20
+	sta PF1                         ; 23, clock 69
+	lda #(FF_OFFSET+STREAM_PF2L)    ; 25
+	sta PF2                         ; 28, clock 84
+	lda #(FF_OFFSET+STREAM_HM)      ; 30
+	sta HMP0                        ; 33: next line's drift, >= 24 cycles after HMOVE
+	sta HMP1                        ; 36
+	lda #(FF_OFFSET+STREAM_PF0R)    ; 38
+	sta PF0                         ; 41, clock 123
+	lda #(FF_OFFSET+STREAM_PF1R)    ; 43
+	sta PF1                         ; 46, clock 138
+	lda #(FF_OFFSET+STREAM_PF2R)    ; 48
+	sta PF2                         ; 51, clock 153
+	lda #(FF_OFFSET+STREAM_COLUP)   ; 53
+	sta COLUP0                      ; 56: next line's sprite color (ARM changes it
+	sta COLUP1                      ; 59  only on lines with no sprite showing)
+	lda #(FF_OFFSET+STREAM_BK)      ; 61
+	sta COLUBK                      ; 64: next line's background (from pixel 124)
+	dex                             ; 66
+	bne VisibleLoop                 ; 69; WSYNC ends by 72-73
 
 ;@ Falls through after the last visible line.
 Overscan:

@@ -5,7 +5,9 @@
 #include <stdint.h>
 #include "audio.h"
 #include "display_list.h"
+#include "enemies.h"
 #include "input.h"
+#include "level.h"
 #include "physics.h"
 
 /*
@@ -21,10 +23,14 @@ int main(void)
     if (*INIT_MAGIC_ADDR != INIT_MAGIC) {
         *INIT_MAGIC_ADDR = INIT_MAGIC;
         physics_init();
+        enemies_init();
         audio_init();
     }
 
     physics_step(input_read());
+    enemies_step();
+    if (enemies_touch(physics_hero_x(), physics_hero_row(), HERO_W, HERO_H))
+        physics_respawn();
     audio_update();
     display_build();
     return 0;

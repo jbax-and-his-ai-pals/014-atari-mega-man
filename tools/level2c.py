@@ -9,6 +9,8 @@ import sys
 
 ROWS = 24
 MIN_COLS = 40
+MAX_ENEMIES = 16
+ENEMY_CHARS = {"W": 0, "F": 1}  # char -> type id
 
 
 class LevelError(Exception):
@@ -16,7 +18,10 @@ class LevelError(Exception):
 
 
 def parse_level(text, name="<level>"):
-    """Return (cols, rows_of_bools, spawn_col, spawn_row)."""
+    """Return (cols, rows_of_bools, spawn_col, spawn_row, enemies).
+
+    enemies is a list of (col, row, type) in reading order.
+    """
     lines = []  # (lineno, text)
     for n, raw in enumerate(text.splitlines(), 1):
         line = raw.rstrip("\r\n")
@@ -36,6 +41,7 @@ def parse_level(text, name="<level>"):
         raise LevelError("%s: width %d is less than the minimum %d" % (name, cols, MIN_COLS))
     grid = []
     spawns = []
+    enemies = []
     for r, (n, line) in enumerate(lines):
         row = []
         for c, ch in enumerate(line):
@@ -46,8 +52,14 @@ def parse_level(text, name="<level>"):
             elif ch == "S":
                 row.append(False)
                 spawns.append((r, c, n))
+            elif ch in ENEMY_CHARS:
+                row.append(False)
+                if len(enemies) >= MAX_ENEMIES:
+                    raise LevelError("%s:%d:%d: too many enemies (maximum %d)"
+                                     % (name, n, c + 1, MAX_ENEMIES))
+                enemies.append((c, r, ENEMY_CHARS[ch]))
             else:
-                raise LevelError("%s:%d:%d: invalid character %r (use '#', '.', 'S')"
+                raise LevelError("%s:%d:%d: invalid character %r (use '#', '.', 'S', 'W', 'F')"
                                  % (name, n, c + 1, ch))
         grid.append(row)
     if not spawns:
@@ -56,7 +68,7 @@ def parse_level(text, name="<level>"):
         where = ", ".join("%d:%d" % (n, c + 1) for _, c, n in spawns)
         raise LevelError("%s: multiple spawns 'S' (at line:col %s); exactly one required"
                          % (name, where))
-    return cols, grid, spawns[0][1], spawns[0][0]
+    return cols, grid, spawns[0][1], spawns[0][0], enemies
 
 
 def pack(cols, grid):
@@ -71,7 +83,9 @@ def pack(cols, grid):
     return stride, bytes(data)
 
 
-def render(src_name, cols, grid, sc, sr):
+def render(src_name, cols, grid, sc, sr, enemies=()):
+    ne = len(enemies)
+    nd = max(ne, 1)
     stride, data = pack(cols, grid)
     hdr = (
         "/* Generated from %s by tools/level2c.py. Do not edit. */\n"
@@ -81,14 +95,28 @@ def render(src_name, cols, grid, sc, sr):
         "#define LEVEL_STRIDE  %du      /* bytes per row: bitmap + 4 zero bytes of padding */\n"
         "#define LEVEL_SPAWN_X %d\n"
         "#define LEVEL_SPAWN_Y %d\n"
+        "#define ENEMY_WALKER  0u\n"
+        "#define ENEMY_FLYER   1u\n"
+        "#define LEVEL_NUM_ENEMIES %du\n"
+        "typedef struct { int16_t x; int16_t y; uint8_t type; } level_enemy_t;"
+        "   /* top-left, pixels: x = 4*col, y = 8*row */\n"
         "extern const uint8_t level_bits[LEVEL_ROWS * LEVEL_STRIDE];\n"
-        "#endif\n" % (src_name, cols, ROWS, stride, 4 * sc, 8 * sr))
+        "extern const level_enemy_t level_enemies[%d];\n"
+        "#endif\n" % (src_name, cols, ROWS, stride, 4 * sc, 8 * sr, ne, nd))
     out = ["/* Generated from %s by tools/level2c.py. Do not edit. */" % src_name,
            '#include "level_data.h"', "",
            "const uint8_t level_bits[LEVEL_ROWS * LEVEL_STRIDE] = {"]
     for r in range(ROWS):
         chunk = data[r * stride:(r + 1) * stride]
         out.append("    /* row %2d */ %s," % (r, ", ".join("0x%02X" % v for v in chunk)))
+    out.append("};")
+    out.append("")
+    out.append("const level_enemy_t level_enemies[%d] = {" % nd)
+    if enemies:
+        for c, r, t in enemies:
+            out.append("    { %d, %d, %d }," % (4 * c, 8 * r, t))
+    else:
+        out.append("    { 0, 0, 0 },")
     out.append("};")
     return "\n".join(out) + "\n", hdr
 
@@ -101,11 +129,11 @@ def main(argv):
     try:
         with open(src, "r", encoding="ascii", errors="strict", newline=None) as f:
             text = f.read()
-        cols, grid, sc, sr = parse_level(text, src.replace("\\", "/"))
+        cols, grid, sc, sr, enemies = parse_level(text, src.replace("\\", "/"))
     except (LevelError, OSError, UnicodeDecodeError) as e:
         sys.stderr.write("level2c: error: %s\n" % e)
         return 1
-    csrc, hdr = render(src.replace("\\", "/"), cols, grid, sc, sr)
+    csrc, hdr = render(src.replace("\\", "/"), cols, grid, sc, sr, enemies)
     for path, content in ((outc, csrc), (outh, hdr)):
         d = os.path.dirname(path)
         if d:

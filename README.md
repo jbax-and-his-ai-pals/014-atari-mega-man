@@ -2,7 +2,8 @@
 
 A 32 KB CDFJ+ ROM for the Atari 2600, with the game logic on the ARM coprocessor
 and the screen kernel on the 6507. So far: a hero you can walk and jump with
-(joystick and fire), across a scrolling tile-map stage.
+(joystick and fire), across a scrolling tile-map stage with walking and flying
+enemies. Touching an enemy, or falling into a pit, sends you back to the start.
 
 ## Build and run
 
@@ -33,7 +34,24 @@ build time; `src/arm/level.h` reads it for both rendering and collision.
 The playfield can only scroll in whole 4 px columns, so the camera snaps to a
 column while the hero sprite moves pixel by pixel. Physics limits for level
 design: the hero is 4 x 2 tiles, jumps about 5 rows high, and clears gaps of up
-to about 7 columns. Falling off the bottom respawns at `S`.
+to about 7 columns. Falling off the bottom respawns at `S`. `W` places a walker
+(patrols its floor, turns at walls and edges) and `F` a flyer (patrols and
+bobs); up to 16 per stage.
+
+## Sprites
+
+Every object is 16x16, drawn with the P0 + P1 pair. The kernel does `HMOVE` on
+every line, with the motion streamed from the ARM, so the pair drifts from one
+object's X to the next one's during the blank lines between them (8 px right or
+7 px left per line), while the playfield keeps drawing. The cost is the black
+8 px `HMOVE` bar on the left edge, and one color per object.
+
+Objects too close vertically for the drift take turns: each frame the one that
+has waited longest is drawn, so they flicker rather than vanish. Objects partly
+off the left or right edge are not drawn yet (they pop in).
+
+Note for `make shot`: Stella needs a few dozen frames after power-on to lock
+onto the frame, so snapshots before about frame 90 can show a rolling picture.
 
 ## Layout
 
@@ -47,6 +65,7 @@ to about 7 columns. Falling off the bottom respawns at `S`.
 | `src/arm/display_list.c` | Camera, and rebuilds the per-scanline tables every frame |
 | `src/arm/level.h` | Tile map access shared by rendering and physics |
 | `src/arm/input.h` | Joystick and fire bits passed from the 6507 |
+| `src/arm/enemies.c` | Walker and flyer behaviour, hero contact |
 | `levels/` | Stage text files |
 | `tests/` | Level converter tests (`make test`) |
 | `src/arm/audio.c` | Stub |

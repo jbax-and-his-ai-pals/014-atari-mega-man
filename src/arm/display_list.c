@@ -8,8 +8,12 @@
  * Camera: follows the hero. The playfield can only move in whole 4 px columns,
  * so the camera snaps to a column; sprites still move one pixel at a time.
  *
- * Hero: a 16x16 test sprite (GRP0 + GRP1) that cycles its color. Its screen X
- * goes to the 6507 through STREAM_HEROX; its rows are placed in the GRP tables.
+ * Sprites: every object (the hero and each enemy) is 16x16, drawn with the
+ * P0 + P1 pair. The kernel does HMOVE on every line, so the pair drifts from one
+ * object's X to the next one's during the blank lines between them (up to 8 px
+ * right or 7 px left per line). Objects too close vertically for that drift
+ * take turns: the one skipped longest is drawn, so they flicker instead of
+ * vanishing.
  *
  * The whole table is rebuilt every frame, so nothing here depends on state
  * left over from boot.
@@ -17,20 +21,24 @@
 #include <stdint.h>
 #include "cdfj.h"
 #include "display_list.h"
+#include "enemies.h"
 #include "level.h"
 #include "physics.h"
 
 /* Stream n -> display-data table. Order matches STREAM_* in layout.inc. */
 static const uint16_t stream_base[NUM_STREAMS] = {
     DD_PF0L, DD_PF1L, DD_PF2L, DD_PF0R, DD_PF1R, DD_PF2R,
-    DD_BK, DD_GRP0, DD_GRP1, DD_COLUP0, DD_COLUP1, DD_COLUPF,
-    DD_HEROX
+    DD_GRP0, DD_GRP1, DD_HM, DD_COLUP, DD_BK, DD_COLUPF, DD_TOPX
 };
 
-#define HERO_ROWS   ((unsigned)HERO_H)
-#define SCREEN_COLS 40
-#define CAMERA_MAX  (LEVEL_W_PX - SCREEN_COLS * TILE_W)
+#define SCREEN_COLS   40
+#define SCREEN_W      (SCREEN_COLS * TILE_W)
+#define CAMERA_MAX    (LEVEL_W_PX - SCREEN_W)
 #define HERO_SCREEN_X 72            /* where the camera keeps the hero, mid-level */
+#define OBJ_W         16
+#define OBJ_H         16
+#define OBJ_X_MAX     (SCREEN_W - OBJ_W)
+#define MAX_OBJS      (1 + 16)      /* the hero, then up to 16 enemies */
 
 /* PosObject in kernel.asm places a sprite this many pixels left of the value
  * it is given; measured with tools/snap.py. */
@@ -42,13 +50,38 @@ static const uint16_t stream_base[NUM_STREAMS] = {
 #define R6(n) R4(n), R4(n + 2 * 4), R4(n + 1 * 4), R4(n + 3 * 4)
 static const uint8_t rev8[256] = { R6(0), R6(2), R6(1), R6(3) };
 
-/* High byte -> GRP0 (pixels 0-7), low byte -> GRP1 (pixels 8-15). */
-static const uint16_t hero_rows[HERO_ROWS] = {
-    0x07E0, 0x1FF8, 0x3FFC, 0x7FFE, 0xFFFF, 0xE7E7, 0xE7E7, 0xFFFF,
-    0xFFFF, 0xFFFF, 0x7FFE, 0x7FFE, 0x3FFC, 0x3FFC, 0x1998, 0x1998
+/* Sprite art, 16x16: high byte -> GRP0 (pixels 0-7), low byte -> GRP1 (8-15). */
+enum { ART_HERO, ART_WALKER, ART_FLYER };
+
+static const uint16_t art[3][OBJ_H] = {
+    {   /* hero */
+        0x07E0, 0x1FF8, 0x3FFC, 0x7FFE, 0xFFFF, 0xE7E7, 0xE7E7, 0xFFFF,
+        0xFFFF, 0xFFFF, 0x7FFE, 0x7FFE, 0x3FFC, 0x3FFC, 0x1998, 0x1998
+    },
+    {   /* walker: a squat shell on stubby legs */
+        0x0000, 0x03C0, 0x0FF0, 0x1FF8, 0x3FFC, 0x399C, 0x399C, 0x7FFE,
+        0x7FFE, 0xFFFF, 0xFFFF, 0x7FFE, 0x3FFC, 0x1E78, 0x3C3C, 0x7C3E
+    },
+    {   /* flyer: wide wings, small body */
+        0x0000, 0x0000, 0xC003, 0xE007, 0xF00F, 0xF99F, 0x7FFE, 0x3E7C,
+        0x1FF8, 0x0FF0, 0x07E0, 0x0240, 0x0420, 0x0000, 0x0000, 0x0000
+    },
 };
 
-static uint32_t frame;
+static const uint8_t art_color[3] = { 0x46, 0xC8, 0x58 };   /* red, green, purple */
+
+typedef struct {
+    int16_t x;                      /* screen X of the left edge, 0..OBJ_X_MAX */
+    int16_t top;                    /* first scanline, may be negative */
+    uint8_t art;
+    uint8_t id;                     /* index into starve[] */
+} obj_t;
+
+/*
+ * Frames since each object (0 = hero, 1+i = enemy i) was last drawn. Starts as
+ * whatever is in RAM; it only biases who wins a conflict, so that is harmless.
+ */
+static uint8_t starve[MAX_OBJS];
 
 /*
  * Pack 20 playfield bits (bit 0 = leftmost pixel) into PF0, PF1, PF2.
@@ -79,14 +112,178 @@ static int camera_x(int hero_x)
     return cam & ~(TILE_W - 1);
 }
 
+/* Lines of HMOVE needed to drift dx pixels (8 per line right, 7 left). */
+static int drift_lines(int dx)
+{
+    int n = 0;
+
+    while (dx > 0) {
+        dx -= 8;
+        n++;
+    }
+    while (dx < 0) {
+        dx += 7;
+        n++;
+    }
+    return n;
+}
+
+/* Can `next` be drawn after `prev` with the same sprite pair? */
+static int fits_after(const obj_t *prev, const obj_t *next)
+{
+    const int first_free = prev->top + OBJ_H;          /* first line after prev */
+    const int gap = next->top - first_free;            /* blank lines between */
+    const int start = first_free > 0 ? first_free : 0;
+
+    /* One blank line to switch colors, and enough HMOVE lines (the gap plus
+     * next's first line, whose HMOVE runs before it is drawn) to drift over. */
+    return gap >= 1 && next->top - start + 1 >= drift_lines(next->x - prev->x);
+}
+
+/* Collect the objects on screen, sorted by top line. Returns the count. */
+static int gather(obj_t *objs, int cam)
+{
+    int n = 0, i, k;
+    const int ne = enemies_count();
+
+    objs[n].x = (int16_t)(physics_hero_x() - cam);
+    objs[n].top = (int16_t)physics_hero_row();
+    objs[n].art = ART_HERO;
+    objs[n].id = 0;
+    n++;
+
+    for (i = 0; i < ne && n < MAX_OBJS; i++) {
+        int ex, ey;
+        unsigned type;
+
+        if (!enemies_get(i, &ex, &ey, &type))
+            continue;
+        ex -= cam;
+        if (ex < 0 || ex > OBJ_X_MAX || ey <= -OBJ_H || ey >= (int)LINES)
+            continue;
+        objs[n].x = (int16_t)ex;
+        objs[n].top = (int16_t)ey;
+        objs[n].art = type == ENEMY_FLYER ? ART_FLYER : ART_WALKER;
+        objs[n].id = (uint8_t)(1 + i);
+        n++;
+    }
+
+    /* Insertion sort by top line; n is at most 17. */
+    for (i = 1; i < n; i++) {
+        obj_t o = objs[i];
+
+        for (k = i; k > 0 && objs[k - 1].top > o.top; k--)
+            objs[k] = objs[k - 1];
+        objs[k] = o;
+    }
+    return n;
+}
+
+/*
+ * Choose which objects to draw this frame, in top-to-bottom order. When one
+ * doesn't fit after the last chosen object, the one that has waited longer
+ * wins. Returns the number chosen; updates starve[].
+ */
+static int schedule(const obj_t *objs, int n, obj_t *out)
+{
+    int m = 0, i;
+
+    for (i = 0; i < n; i++)
+        if (starve[objs[i].id] < 255)
+            starve[objs[i].id]++;
+
+    for (i = 0; i < n; i++) {
+        const obj_t *o = &objs[i];
+
+        while (m > 0 && !fits_after(&out[m - 1], o)) {
+            if (starve[o->id] > starve[out[m - 1].id])
+                m--;                /* drop the previous one, try again */
+            else
+                break;
+        }
+        if (m == 0 || fits_after(&out[m - 1], o))
+            out[m++] = *o;
+    }
+
+    for (i = 0; i < m; i++)
+        starve[out[i].id] = 0;
+    return m;
+}
+
+static uint8_t hm_byte(int move)    /* move > 0: right, < 0: left */
+{
+    if (move > 0)
+        return (uint8_t)(((16 - move) & 15) << 4);
+    return (uint8_t)((-move) << 4);
+}
+
+static void build_sprites(const obj_t *s, int m)
+{
+    int i, k;
+    unsigned line;
+
+    for (line = 0; line < LINES; line++) {
+        dd_put(DD_GRP0 + line, 0);
+        dd_put(DD_GRP1 + line, 0);
+    }
+    for (line = 0; line <= LINES; line++)
+        dd_put(DD_HM + line, 0);
+
+    for (i = 0; i < m; i++) {
+        const uint16_t *rows = art[s[i].art];
+        const uint8_t color = art_color[s[i].art];
+        const int next_top = i + 1 < m ? s[i + 1].top : (int)LINES + 1;
+        int from = i == 0 ? 0 : s[i].top;
+
+        /* Graphics rows that are on screen. */
+        for (k = 0; k < OBJ_H; k++) {
+            const int y = s[i].top + k;
+
+            if (y >= 0 && y < (int)LINES) {
+                dd_put(DD_GRP0 + y, (uint8_t)(rows[k] >> 8));
+                dd_put(DD_GRP1 + y, (uint8_t)(rows[k] & 0xFFu));
+            }
+        }
+
+        /* Color from this object's top (line 0 for the first) until the next
+         * object's top; the switch is read on the blank line before it. */
+        if (from < 0)
+            from = 0;
+        for (k = from; k < next_top && k <= (int)LINES; k++)
+            dd_put(DD_COLUP + k, color);
+
+        /* Drift to the next object over the blank lines after this one. */
+        if (i + 1 < m) {
+            int dx = s[i + 1].x - s[i].x;
+
+            k = s[i].top + OBJ_H;
+            if (k < 0)
+                k = 0;
+            while (dx != 0 && k <= (int)LINES) {
+                int move = dx > 8 ? 8 : (dx < -7 ? -7 : dx);
+
+                dd_put(DD_HM + k, hm_byte(move));
+                dx -= move;
+                k++;
+            }
+        }
+    }
+
+    if (m == 0)
+        for (k = 0; k <= (int)LINES; k++)
+            dd_put(DD_COLUP + k, 0);
+
+    dd_put(DD_TOPX, (uint8_t)((m > 0 ? s[0].x : 0) + HERO_X_TRIM));
+}
+
 void display_build(void)
 {
-    const int hero_x = physics_hero_x();
-    const int hero_top = physics_hero_row();
-    const int cam = camera_x(hero_x);
+    const int cam = camera_x(physics_hero_x());
     const unsigned col0 = (unsigned)cam / TILE_W;
+    obj_t objs[MAX_OBJS], shown[MAX_OBJS];
     unsigned row, line = 0;
     unsigned n;
+    int m;
 
     for (row = 0; row < LEVEL_ROWS; row++) {
         uint8_t left[3], right[3];
@@ -96,42 +293,27 @@ void display_build(void)
         pack_half(level_row_bits(row, col0 + 20), right);
 
         for (k = 0; k < TILE_H; k++, line++) {
-            int rel = (int)line - hero_top;
-            uint8_t g0 = 0, g1 = 0, c = 0;
-
             dd_put(DD_PF0L + line, left[0]);
             dd_put(DD_PF1L + line, left[1]);
             dd_put(DD_PF2L + line, left[2]);
             dd_put(DD_PF0R + line, right[0]);
             dd_put(DD_PF1R + line, right[1]);
             dd_put(DD_PF2R + line, right[2]);
-
-            /* Sky: blue, getting brighter toward the bottom. */
-            dd_put(DD_BK + line, (uint8_t)(0x90u | ((2u + (line >> 5)) << 1)));
-
-            if (rel >= 0 && rel < (int)HERO_ROWS) {
-                unsigned t = ((unsigned)rel + (unsigned)frame) >> 1;
-                uint16_t bits = hero_rows[rel];
-
-                g0 = (uint8_t)(bits >> 8);
-                g1 = (uint8_t)(bits & 0xFFu);
-                c  = (uint8_t)(0x40u | ((t & 7u) << 1));
-            }
-            dd_put(DD_GRP0 + line, g0);
-            dd_put(DD_GRP1 + line, g1);
-            dd_put(DD_COLUP0 + line, c);
-            dd_put(DD_COLUP1 + line, c);
         }
     }
 
+    /* Sky: blue, getting brighter toward the bottom. */
+    for (line = 0; line <= LINES; line++)
+        dd_put(DD_BK + line, (uint8_t)(0x90u | ((2u + (line >> 5)) << 1)));
+
+    m = schedule(objs, gather(objs, cam), shown);
+    build_sprites(shown, m);
+
     dd_put(DD_COLUPF, 0x1Eu);       /* platform color: gold */
-    dd_put(DD_HEROX, (uint8_t)(hero_x - cam + HERO_X_TRIM));
 
     /* Point each stream at its table, and step one byte per fetch. */
     for (n = 0; n < NUM_STREAMS; n++) {
         cdf_stream_set(n, stream_base[n]);
         cdf_stream_step1(n);
     }
-
-    frame++;
 }

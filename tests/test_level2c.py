@@ -105,6 +105,63 @@ class TestGood(Base):
         self.assertEqual(data[:36], [0] * 36)  # row 0 empty
 
 
+def place(text, items):
+    """Put enemy chars into a make_level(comment=False) text: items = (row, col, ch)."""
+    lines = text.splitlines()
+    for r, c, ch in items:
+        lines[r] = lines[r][:c] + ch + lines[r][c + 1:]
+    return "\n".join(lines) + "\n"
+
+
+class TestEnemies(Base):
+    def base(self, **kw):
+        return make_level(comment=False, spawn=(0, 0), **kw)
+
+    def enemy_entries(self, csrc):
+        import re
+        body = csrc.split("level_enemies[", 1)[1]
+        return [tuple(int(v) for v in m) for m in
+                re.findall(r"\{\s*(-?\d+),\s*(-?\d+),\s*(\d+)\s*\}", body)]
+
+    def test_parse_order_and_coords(self):
+        # out of reading order on purpose; output must be row-major
+        text = place(self.base(cols=64), [(10, 30, "F"), (5, 40, "W"), (5, 12, "F"),
+                                          (20, 3, "W")])
+        csrc, hdr = self.ok(text)
+        self.assertEqual(self.enemy_entries(csrc),
+                         [(48, 40, 1), (160, 40, 0), (120, 80, 1), (12, 160, 0)])
+        self.assertIn("#define ENEMY_WALKER  0u", hdr)
+        self.assertIn("#define ENEMY_FLYER   1u", hdr)
+        self.assertIn("#define LEVEL_NUM_ENEMIES 4u", hdr)
+        self.assertIn("typedef struct { int16_t x; int16_t y; uint8_t type; } level_enemy_t;", hdr)
+        self.assertIn("extern const level_enemy_t level_enemies[4];", hdr)
+        self.assertIn("const level_enemy_t level_enemies[4] = {", csrc)
+
+    def test_tiles_are_empty(self):
+        csrc, _ = self.ok(place(self.base(), [(2, 8, "W"), (2, 9, "F")]))
+        data = bytes_from_c(csrc.split("level_enemies", 1)[0])
+        stride = 9
+        self.assertEqual(data[2 * stride + 1], 0)
+        self.assertEqual(sum(data), 0)
+
+    def test_zero_enemies_dummy(self):
+        csrc, hdr = self.ok(self.base())
+        self.assertIn("#define LEVEL_NUM_ENEMIES 0u", hdr)
+        self.assertIn("extern const level_enemy_t level_enemies[1];", hdr)
+        self.assertEqual(self.enemy_entries(csrc), [(0, 0, 0)])
+
+    def test_sixteen_ok(self):
+        items = [(r, 10 + c, "W") for r in (2, 4) for c in range(8)]
+        csrc, hdr = self.ok(place(self.base(), items))
+        self.assertIn("#define LEVEL_NUM_ENEMIES 16u", hdr)
+        self.assertEqual(len(self.enemy_entries(csrc)), 16)
+
+    def test_seventeen_fails(self):
+        items = [(r, 10 + c, "F") for r in (2, 4) for c in range(8)] + [(6, 5, "W")]
+        # the 17th in reading order is at line 6 (1-based), col 6
+        self.fail(place(self.base(), items), "lvl.txt:7:6", "too many enemies")
+
+
 class TestErrors(Base):
     def test_row_count(self):
         t = make_level().splitlines()
