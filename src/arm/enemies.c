@@ -149,6 +149,29 @@ int enemies_get(int i, int *x, int *y, unsigned *type)
     return 1;
 }
 
+int enemies_hit(int x, int y, int w, int h)
+{
+    int i;
+
+    for (i = 0; i < (int)e_n; i++) {
+        int ex, ey;
+
+        if (!e_alive[i])
+            continue;
+        ex = (int)(e_x[i] >> 8);
+        ey = (int)e_y[i];
+        if (x < ex + ENEMY_W && x + w > ex && y < ey + ENEMY_H && y + h > ey)
+            return i;
+    }
+    return -1;
+}
+
+void enemies_kill(int i)
+{
+    if (i >= 0 && i < (int)e_n)
+        e_alive[i] = 0;
+}
+
 int enemies_touch(int hx, int hy, int hw, int hh)
 {
     int i;

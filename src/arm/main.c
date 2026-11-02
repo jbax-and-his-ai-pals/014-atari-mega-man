@@ -9,6 +9,7 @@
 #include "input.h"
 #include "level.h"
 #include "physics.h"
+#include "shots.h"
 
 /*
  * Boot code does not clear .bss on every power-on, so one-time setup is tracked
@@ -24,13 +25,25 @@ int main(void)
         *INIT_MAGIC_ADDR = INIT_MAGIC;
         physics_init();
         enemies_init();
+        shots_init();
         audio_init();
     }
 
-    physics_step(input_read());
-    enemies_step();
-    if (enemies_touch(physics_hero_x(), physics_hero_row(), HERO_W, HERO_H))
-        physics_respawn();
+    {
+        const unsigned pad = input_read();
+        int died = physics_step(pad);
+
+        enemies_step();
+        shots_step(pad);
+        if (enemies_touch(physics_hero_x(), physics_hero_row(), HERO_W, HERO_H))
+            died = 1;
+        if (died) {
+            /* Back to the start, with every enemy back in place. */
+            physics_respawn();
+            enemies_init();
+            shots_init();
+        }
+    }
     audio_update();
     display_build();
     return 0;

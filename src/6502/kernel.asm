@@ -14,7 +14,8 @@
 ;@   GRP0/GRP1 land in HBLANK (clocks 24, 39)
 ;@   left  PF0/PF1/PF2 land at clocks 54, 69, 84   (needed by 68, 84, 116)
 ;@   right PF0/PF1/PF2 land at clocks 123, 138, 153 (windows 84-148, 116-164, 148-196)
-;@   HM, COLUP and COLUBK are written late in the line for the next line.
+;@   HM, COLUP, COLUBK and ENAM0 are written late in the line for the next line.
+;@ The loop is exactly 76 cycles with no WSYNC; that is what makes room for ENAM0.
 
 VBLANK_TIMER_60   = 43      ; TIM64T value for the VBLANK interval (NTSC)
 OVERSCAN_TIMER_60 = 35      ; TIM64T value for the overscan interval (NTSC)
@@ -75,22 +76,26 @@ FrameStart:
 	adc #8
 	ldx #1
 	jsr PosObject
+	lda #(FF_OFFSET+STREAM_M0X)     ; the bullet
+	ldx #2
+	jsr PosObject
 	sta WSYNC
 	sta HMOVE                       ; 3: apply fine motion in HBLANK
-	; Entry 0 of the next-line tables: line 0's color, background and motion.
+	; Entry 0 of the next-line tables: line 0's color, background, bullet and motion.
 	lda #(FF_OFFSET+STREAM_COLUP)   ; 5
 	sta COLUP0                      ; 8
 	sta COLUP1                      ; 11
 	lda #(FF_OFFSET+STREAM_BK)      ; 13
 	sta COLUBK                      ; 16
-	nop                             ; 18
-	nop                             ; 20
-	nop                             ; 22
-	nop                             ; 24
-	nop                             ; 26
+	lda #(FF_OFFSET+STREAM_ENAM0)   ; 18
+	sta ENAM0                       ; 21
+	lda #$20                        ; 23: one copy of P0, missile 4 px wide
+	sta NUSIZ0                      ; 26
 	lda #(FF_OFFSET+STREAM_HM)      ; 28
 	sta HMP0                        ; 31: HMxx left alone for 24 cycles after HMOVE
 	sta HMP1                        ; 34
+	lda #0                          ; 36
+	sta HMM0                        ; 39: the bullet does not drift with the sprites
 
 .waitVBLANK:
 	lda INTIM
@@ -99,9 +104,11 @@ FrameStart:
 	lda #0
 	sta VBLANK
 	ldx #LINES
+	sta WSYNC                       ; the loop below starts exactly at cycle 0
 
+;@ Exactly 76 cycles per pass, with no WSYNC, so each pass is one scanline.
+;@ The branch must not cross a page (checked below), or it takes a cycle more.
 VisibleLoop:
-	sta WSYNC                       ; cycle 0 of the visible line
 	sta HMOVE                       ; 3: drift the sprite pair
 	lda #(FF_OFFSET+STREAM_GRP0)    ; 5
 	sta GRP0                        ; 8, clock 24 (HBLANK)
@@ -127,12 +134,20 @@ VisibleLoop:
 	sta COLUP1                      ; 59  only on lines with no sprite showing)
 	lda #(FF_OFFSET+STREAM_BK)      ; 61
 	sta COLUBK                      ; 64: next line's background (from pixel 124)
-	dex                             ; 66
-	bne VisibleLoop                 ; 69; WSYNC ends by 72-73
+	lda #(FF_OFFSET+STREAM_ENAM0)   ; 66
+	sta ENAM0                       ; 69: next line's bullet enable (from pixel 139)
+	nop                             ; 71
+	dex                             ; 73
+	bne VisibleLoop                 ; 76 when taken: the next pass starts at cycle 0
+VisibleLoopEnd:
+	IF (>VisibleLoop) != (>VisibleLoopEnd)
+	ECHO "VisibleLoop crosses a page; its branch would take 77 cycles"
+	ERR
+	ENDIF
 
-;@ Falls through after the last visible line.
+;@ Falls through after the last visible line, at its cycle 75, so the next
+;@ instruction starts the first overscan line (a WSYNC here would waste a line).
 Overscan:
-	sta WSYNC
 	lda #2
 	sta VBLANK
 	lda #0                          ; clear playfield, sprites and background, so the
@@ -142,6 +157,7 @@ Overscan:
 	sta GRP0
 	sta GRP1
 	sta COLUBK
+	sta ENAM0
 	lda #OVERSCAN_TIMER_60
 	sta TIM64T
 .waitOverscan:
@@ -149,7 +165,7 @@ Overscan:
 	bne .waitOverscan
 	jmp FrameStart
 
-;@ Set the horizontal position of object X (0 = P0, 1 = P1) to A (0-159).
+;@ Set the horizontal position of object X (0 = P0, 1 = P1, 2 = M0, 3 = M1) to A (0-159).
 ;@ Coarse position: one RESPx strobe after a divide-by-15 loop; the remainder
 ;@ becomes the fine motion in HMPx. Takes one scanline; HMOVE must follow.
 PosObject:

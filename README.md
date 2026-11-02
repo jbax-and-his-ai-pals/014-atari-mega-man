@@ -1,9 +1,12 @@
 # Atari 2600 CDFJ+ platformer
 
 A 32 KB CDFJ+ ROM for the Atari 2600, with the game logic on the ARM coprocessor
-and the screen kernel on the 6507. So far: a hero you can walk and jump with
-(joystick and fire), across a scrolling tile-map stage with walking and flying
-enemies. Touching an enemy, or falling into a pit, sends you back to the start.
+and the screen kernel on the 6507. So far: a hero who walks, jumps and shoots
+across a scrolling tile-map stage with walking and flying enemies. Touching an
+enemy, or falling into a pit, sends you back to the start with every enemy back.
+
+Controls (Stella keyboard: arrows and Space): left/right walk, up jumps (hold
+for a higher jump), fire shoots in the direction you face.
 
 ## Build and run
 
@@ -46,6 +49,12 @@ object's X to the next one's during the blank lines between them (8 px right or
 7 px left per line), while the playfield keeps drawing. The cost is the black
 8 px `HMOVE` bar on the left edge, and one color per object.
 
+Bullets use missile 0 (4 px wide, 2 lines tall), positioned in VBLANK and
+enabled per line from a stream. Up to two fly at once; with two, they take
+turns being drawn. To fit the per-line `ENAM0` write, the visible loop runs
+exactly 76 cycles without `WSYNC`, and the assembler checks its branch does not
+cross a page.
+
 Objects too close vertically for the drift take turns: each frame the one that
 has waited longest is drawn, so they flicker rather than vanish. Objects partly
 off the left or right edge are not drawn yet (they pop in).
@@ -66,6 +75,7 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/arm/level.h` | Tile map access shared by rendering and physics |
 | `src/arm/input.h` | Joystick and fire bits passed from the 6507 |
 | `src/arm/enemies.c` | Walker and flyer behaviour, hero contact |
+| `src/arm/shots.c` | Hero bullets: fire, move, hit tiles and enemies |
 | `levels/` | Stage text files |
 | `tests/` | Level converter tests (`make test`) |
 | `src/arm/audio.c` | Stub |

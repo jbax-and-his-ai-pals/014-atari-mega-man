@@ -24,11 +24,13 @@
 #include "enemies.h"
 #include "level.h"
 #include "physics.h"
+#include "shots.h"
 
 /* Stream n -> display-data table. Order matches STREAM_* in layout.inc. */
 static const uint16_t stream_base[NUM_STREAMS] = {
     DD_PF0L, DD_PF1L, DD_PF2L, DD_PF0R, DD_PF1R, DD_PF2R,
-    DD_GRP0, DD_GRP1, DD_HM, DD_COLUP, DD_BK, DD_COLUPF, DD_TOPX
+    DD_GRP0, DD_GRP1, DD_HM, DD_COLUP, DD_BK, DD_COLUPF, DD_TOPX,
+    DD_ENAM0, DD_M0X
 };
 
 #define SCREEN_COLS   40
@@ -43,6 +45,7 @@ static const uint16_t stream_base[NUM_STREAMS] = {
 /* PosObject in kernel.asm places a sprite this many pixels left of the value
  * it is given; measured with tools/snap.py. */
 #define HERO_X_TRIM 3
+#define SHOT_X_TRIM 4               /* the same for missile 0 */
 
 /* Bit-reverse a byte: PF1 shows its bits D7 first, the map stores leftmost first. */
 #define R2(n) n, n + 2 * 64, n + 1 * 64, n + 3 * 64
@@ -276,6 +279,33 @@ static void build_sprites(const obj_t *s, int m)
     dd_put(DD_TOPX, (uint8_t)((m > 0 ? s[0].x : 0) + HERO_X_TRIM));
 }
 
+/* Missile 0 shows one bullet: enable it on its lines, and send its X. */
+static void build_shot(int cam)
+{
+    int sx, sy, k;
+    unsigned line;
+
+    for (line = 0; line <= LINES; line++)
+        dd_put(DD_ENAM0 + line, 0);
+
+    if (!shots_pick(&sx, &sy)) {
+        dd_put(DD_M0X, 0);
+        return;
+    }
+    sx -= cam;
+    if (sx < 0 || sx > SCREEN_W - SHOT_W) {
+        dd_put(DD_M0X, 0);
+        return;
+    }
+    for (k = 0; k < SHOT_H; k++) {
+        const int y = sy + k;
+
+        if (y >= 0 && y < (int)LINES)
+            dd_put(DD_ENAM0 + y, 2);    /* ENAM0 D1 = on */
+    }
+    dd_put(DD_M0X, (uint8_t)(sx + SHOT_X_TRIM));
+}
+
 void display_build(void)
 {
     const int cam = camera_x(physics_hero_x());
@@ -308,6 +338,7 @@ void display_build(void)
 
     m = schedule(objs, gather(objs, cam), shown);
     build_sprites(shown, m);
+    build_shot(cam);
 
     dd_put(DD_COLUPF, 0x1Eu);       /* platform color: gold */
 

@@ -2,7 +2,8 @@
  * Hero physics in 8.8 fixed point. The ARM7 has no FPU and no hardware divide,
  * so there are no floats and no / or % in this file.
  *
- * Left/right walks, fire jumps. Releasing fire early cuts the jump short.
+ * Left/right walks, up jumps (fire shoots, see shots.c). Releasing up early
+ * cuts the jump short.
  * Collision is against the tile map (level.h), one axis at a time. Speeds stay
  * below one tile per frame (4 px across, 8 lines down), so nothing tunnels.
  * Falling off the bottom of the screen respawns the hero.
@@ -15,7 +16,7 @@
 #define GRAVITY     0x0040          /* +0.25 scanlines/frame^2 */
 #define MAX_FALL    0x0400          /* 4 scanlines/frame */
 #define JUMP_SPEED  (-0x0480)       /* -4.5 scanlines/frame: rises about 40 lines */
-#define JUMP_CUT    (-0x0100)       /* rise speed cap once fire is released */
+#define JUMP_CUT    (-0x0100)       /* rise speed cap once up is released */
 #define WALK_SPEED  0x0140          /* 1.25 px/frame */
 #define X_MAX       ((LEVEL_W_PX - HERO_W) << 8)
 #define RESPAWN_Y   ((int)LINES + HERO_H) /* top scanline that counts as fallen out */
@@ -25,6 +26,7 @@ static int32_t hero_y;              /* top of hero, 8.8 scanlines */
 static int32_t hero_vy;             /* 8.8 scanlines per frame */
 static unsigned on_ground;
 static unsigned prev_pad;
+static int facing;                  /* +1 right, -1 left */
 
 static void spawn(void)
 {
@@ -32,6 +34,7 @@ static void spawn(void)
     hero_y    = LEVEL_SPAWN_Y << 8;
     hero_vy   = 0;
     on_ground = 0;
+    facing    = 1;
 }
 
 void physics_init(void)
@@ -61,12 +64,15 @@ static void move_x(unsigned pad)
 {
     int px, py;
 
-    if (pad & PAD_LEFT)
+    if (pad & PAD_LEFT) {
         hero_x -= WALK_SPEED;
-    else if (pad & PAD_RIGHT)
+        facing = -1;
+    } else if (pad & PAD_RIGHT) {
         hero_x += WALK_SPEED;
-    else
+        facing = 1;
+    } else {
         return;
+    }
     if (hero_x < 0)
         hero_x = 0;
     if (hero_x > X_MAX)
@@ -115,22 +121,31 @@ static void move_y(void)
     }
 }
 
-void physics_step(unsigned pad)
+int physics_step(unsigned pad)
 {
     const unsigned pressed = pad & ~prev_pad;
+    int fell = 0;
 
     move_x(pad);
 
-    if ((pressed & PAD_FIRE) && on_ground)
+    if ((pressed & PAD_UP) && on_ground)
         hero_vy = JUMP_SPEED;
-    if (!(pad & PAD_FIRE) && hero_vy < JUMP_CUT)
+    if (!(pad & PAD_UP) && hero_vy < JUMP_CUT)
         hero_vy = JUMP_CUT;
     move_y();
 
-    if ((hero_y >> 8) > RESPAWN_Y)
+    if ((hero_y >> 8) > RESPAWN_Y) {
         spawn();
+        fell = 1;
+    }
 
     prev_pad = pad;
+    return fell;
+}
+
+int physics_hero_facing(void)
+{
+    return facing;
 }
 
 int physics_hero_row(void)
