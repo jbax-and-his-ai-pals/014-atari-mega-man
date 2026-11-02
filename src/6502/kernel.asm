@@ -21,6 +21,7 @@ VBLANK_TIMER_60   = 43      ; TIM64T value for the VBLANK interval (NTSC)
 OVERSCAN_TIMER_60 = 35      ; TIM64T value for the overscan interval (NTSC)
 
 top_x             = $80     ; zero-page copy of the top sprite X fetched from the ARM
+scene_mode        = $81     ; 0 = game kernel, 1 = scene kernel (set by the ARM each frame)
 
 Reset:
 	sei
@@ -63,6 +64,8 @@ FrameStart:
 
 	lda #255
 	sta CALLFN                      ; ARM: game update; returns when done
+	lda #(FF_OFFSET+STREAM_MODE)    ; which visible kernel this frame uses
+	sta scene_mode
 	lda #(FF_OFFSET+STREAM_COLUPF)  ; fetch the frame's playfield color
 	sta COLUPF
 
@@ -81,7 +84,10 @@ FrameStart:
 	jsr PosObject
 	sta WSYNC
 	sta HMOVE                       ; 3: apply fine motion in HBLANK
-	; Entry 0 of the next-line tables: line 0's color, background, bullet and motion.
+	lda scene_mode
+	bne .waitVBLANK                 ; the scene kernel reads each line's values itself
+	; Game kernel only: entry 0 of the next-line tables: line 0's color,
+	; background, bullet and motion.
 	lda #(FF_OFFSET+STREAM_COLUP)   ; 5
 	sta COLUP0                      ; 8
 	sta COLUP1                      ; 11
@@ -104,6 +110,10 @@ FrameStart:
 	lda #0
 	sta VBLANK
 	ldx #LINES
+	lda scene_mode
+	beq .gameKernel
+	jmp SceneKernel
+.gameKernel:
 	sta WSYNC                       ; the loop below starts exactly at cycle 0
 
 ;@ Exactly 76 cycles per pass, with no WSYNC, so each pass is one scanline.
@@ -164,6 +174,45 @@ Overscan:
 	lda INTIM
 	bne .waitOverscan
 	jmp FrameStart
+
+;@ Scene kernel, for the intro and menus: one scanline per pass (WSYNC at the top).
+;@ Nothing drifts or shoots here, which frees the cycles for a playfield color
+;@ per line. Every table is indexed by the line it draws (entry k = line k).
+;@   PF0/PF1/PF2 left land at clocks 15, 30, 99 (needed by 68, 84, 116)
+;@   COLUPF and COLUBK land in HBLANK (45, 60)
+;@   sprite color and graphics land at clocks 84, 114, 129, so a sprite must start
+;@   at x >= 62 or its left part is drawn with the previous row's data
+;@   PF0/PF1/PF2 right land at clocks 144, 159, 174 (windows 84-148, 116-164, 148-196)
+SceneKernel:
+SceneLoop:
+	sta WSYNC                       ; cycle 0
+	lda #(FF_OFFSET+STREAM_PF0L)    ; 2
+	sta PF0                         ; 5
+	lda #(FF_OFFSET+STREAM_PF1L)    ; 7
+	sta PF1                         ; 10
+	lda #(FF_OFFSET+STREAM_COLUPFL) ; 12
+	sta COLUPF                      ; 15
+	lda #(FF_OFFSET+STREAM_BK)      ; 17
+	sta COLUBK                      ; 20
+	lda #(FF_OFFSET+STREAM_COLUP)   ; 22
+	sta COLUP0                      ; 25
+	sta COLUP1                      ; 28
+	lda #(FF_OFFSET+STREAM_PF2L)    ; 30
+	sta PF2                         ; 33
+	lda #(FF_OFFSET+STREAM_GRP0)    ; 35
+	sta GRP0                        ; 38
+	lda #(FF_OFFSET+STREAM_GRP1)    ; 40
+	sta GRP1                        ; 43
+	lda #(FF_OFFSET+STREAM_PF0R)    ; 45
+	sta PF0                         ; 48
+	lda #(FF_OFFSET+STREAM_PF1R)    ; 50
+	sta PF1                         ; 53
+	lda #(FF_OFFSET+STREAM_PF2R)    ; 55
+	sta PF2                         ; 58
+	dex                             ; 60
+	bne SceneLoop                   ; 63
+	sta WSYNC                       ; finish the last line; overscan starts on a line edge
+	jmp Overscan
 
 ;@ Set the horizontal position of object X (0 = P0, 1 = P1, 2 = M0, 3 = M1) to A (0-159).
 ;@ Coarse position: one RESPx strobe after a divide-by-15 loop; the remainder

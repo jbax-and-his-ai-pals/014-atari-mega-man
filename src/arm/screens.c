@@ -5,7 +5,6 @@
  * Statics are assigned in the *_enter() functions: RAM is not zeroed at boot.
  */
 #include <stdint.h>
-#include "art_data.h"
 #include "display_list.h"
 #include "fb.h"
 #include "screens.h"
@@ -44,48 +43,6 @@ int stage_at(int gx, int gy)
     if (g == 4)
         return -1;
     return g > 4 ? g - 1 : g;
-}
-
-/* ---- title ---- */
-
-#define TITLE_FLOOR 168             /* first line of the floor */
-#define HERO_RUN_Y  (TITLE_FLOOR - 16)
-
-void screen_title_enter(void)
-{
-    int x;
-
-    fb_clear();
-    fb_fill(4, 10, VIS_W - 2, 2, 1);
-    fb_text(centered("MEH-GA", 1), 18, "MEH-GA", 1, 5);
-    fb_text(centered("MAN", 2), 48, "MAN", 2, 6);
-    fb_fill(4, 84, VIS_W - 2, 2, 1);
-
-    /* Floor: solid, with a groove and brick joints. */
-    fb_fill(VIS_COL, TITLE_FLOOR, VIS_W, 24, 1);
-    fb_fill(VIS_COL, TITLE_FLOOR + 6, VIS_W, 1, 0);
-    fb_fill(VIS_COL, TITLE_FLOOR + 15, VIS_W, 1, 0);
-    for (x = VIS_COL + 4; x < FB_COLS; x += 8) {
-        fb_fill(x, TITLE_FLOOR + 7, 1, 8, 0);
-        fb_fill(x + 4, TITLE_FLOOR + 16, 1, 8, 0);
-    }
-}
-
-void screen_title_frame(unsigned tick)
-{
-    /* Blinking prompt: on for 32 frames, off for 32. */
-    fb_fill(VIS_COL, 110, VIS_W, 15, 0);
-    if (!(tick & 32u))
-        fb_text(centered("START", 1), 110, "START", 1, 3);
-
-    fb_present();
-    display_sky(0x80u, 1);
-    {
-        static const uint8_t run[4] = { ART_HERO_RUN_A, ART_HERO_RUN_P, ART_HERO_RUN_B, ART_HERO_RUN_P };
-
-        display_one_sprite(8 + (int)((tick >> 1) & 127u), HERO_RUN_Y, run[(tick >> 2) & 3u], 0);
-    }
-    display_finish(COLOR_PF);
 }
 
 /* ---- stage select ---- */
@@ -174,7 +131,7 @@ void screen_select_frame(int gx, int gy, unsigned tick)
     fb_text(centered(name, 1), NAME_LINE, name, 1, 4);
 
     fb_present();
-    display_sky(0x80u, 1);
+    display_sky(0x80u, 1, 5);
     display_no_sprites();
     display_finish(COLOR_PF);
 }

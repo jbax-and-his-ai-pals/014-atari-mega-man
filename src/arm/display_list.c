@@ -33,7 +33,7 @@
 static const uint16_t stream_base[NUM_STREAMS] = {
     DD_PF0L, DD_PF1L, DD_PF2L, DD_PF0R, DD_PF1R, DD_PF2R,
     DD_GRP0, DD_GRP1, DD_HM, DD_COLUP, DD_BK, DD_COLUPF, DD_TOPX,
-    DD_ENAM0, DD_M0X
+    DD_ENAM0, DD_M0X, DD_COLUPFL, DD_MODE
 };
 
 #define SCREEN_COLS   40
@@ -343,7 +343,7 @@ void display_build(void)
         }
     }
 
-    display_sky(0x90u, 2);          /* blue, getting brighter toward the bottom */
+    display_sky(0x80u, 0, 6);       /* black, fading to deep blue toward the floor */
 
     m = schedule(objs, gather(objs, cam), shown);
     build_sprites(shown, m);
@@ -352,17 +352,54 @@ void display_build(void)
     display_finish(0x1Eu);          /* platform color: gold */
 }
 
-void display_sky(uint8_t hue, unsigned lum0)
+void display_sky(uint8_t hue, unsigned lum0, unsigned shift)
 {
     unsigned line;
 
     for (line = 0; line <= LINES; line++) {
-        unsigned lum = lum0 + (line >> 5);
+        unsigned lum = lum0 + (line >> shift);
 
         if (lum > 7u)
             lum = 7u;
         dd_put(DD_BK + line, (uint8_t)(hue | (lum << 1)));
     }
+}
+
+void display_pf_line(unsigned line, uint32_t left, uint32_t right)
+{
+    uint8_t l[3], r[3];
+
+    fb_pack_half(left, l);
+    fb_pack_half(right, r);
+    dd_put(DD_PF0L + line, l[0]);
+    dd_put(DD_PF1L + line, l[1]);
+    dd_put(DD_PF2L + line, l[2]);
+    dd_put(DD_PF0R + line, r[0]);
+    dd_put(DD_PF1R + line, r[1]);
+    dd_put(DD_PF2R + line, r[2]);
+}
+
+void display_bk_line(unsigned line, uint8_t color)
+{
+    dd_put(DD_BK + line, color);
+}
+
+void display_sprites(const display_sprite_t *s, int n)
+{
+    obj_t objs[MAX_OBJS], shown[MAX_OBJS];
+    int i;
+
+    if (n > MAX_OBJS)
+        n = MAX_OBJS;
+    for (i = 0; i < n; i++) {
+        objs[i].x = s[i].x;
+        objs[i].top = s[i].top;
+        objs[i].frame = s[i].frame;
+        objs[i].flip = s[i].flip;
+        objs[i].id = (uint8_t)i;
+    }
+    build_sprites(shown, schedule(objs, n, shown));
+    clear_shot();
 }
 
 void display_no_sprites(void)
@@ -373,26 +410,40 @@ void display_no_sprites(void)
 
 void display_one_sprite(int x, int top, int frame, int flip)
 {
-    obj_t o;
+    display_sprite_t s;
 
-    o.x = (int16_t)x;
-    o.top = (int16_t)top;
-    o.frame = (uint8_t)frame;
-    o.flip = (uint8_t)flip;
-    o.id = 0;
-    build_sprites(&o, 1);
-    clear_shot();
+    s.x = (int16_t)x;
+    s.top = (int16_t)top;
+    s.frame = (uint8_t)frame;
+    s.flip = (uint8_t)flip;
+    display_sprites(&s, 1);
 }
 
-void display_finish(uint8_t colupf)
+/* Point each stream at its table, and step one byte per fetch. */
+static void finish(uint8_t colupf, uint8_t scene)
 {
     unsigned n;
 
     dd_put(DD_COLUPF, colupf);
+    dd_put(DD_MODE, scene);
 
-    /* Point each stream at its table, and step one byte per fetch. */
     for (n = 0; n < NUM_STREAMS; n++) {
         cdf_stream_set(n, stream_base[n]);
         cdf_stream_step1(n);
     }
+}
+
+void display_finish(uint8_t colupf)
+{
+    finish(colupf, 0);
+}
+
+void display_finish_scene(void)
+{
+    finish(0, 1);
+}
+
+void display_pfcolor_line(unsigned line, uint8_t color)
+{
+    dd_put(DD_COLUPFL + line, color);
 }

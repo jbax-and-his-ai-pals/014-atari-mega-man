@@ -154,6 +154,15 @@ void fb_pack_half(uint32_t bits, uint8_t out[3])
     out[2] = (uint8_t)((bits >> 12) & 0xFFu);
 }
 
+void fb_line(unsigned line, uint32_t *left, uint32_t *right)
+{
+    const volatile uint8_t *p = &FB[line * FB_STRIDE];
+    const uint32_t b0 = p[0], b1 = p[1], b2 = p[2], b3 = p[3], b4 = p[4];
+
+    *left = b0 | (b1 << 8) | ((b2 & 0x0Fu) << 16);
+    *right = (b2 >> 4) | (b3 << 4) | (b4 << 12);
+}
+
 void fb_present(void)
 {
     unsigned line;

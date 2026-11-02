@@ -35,6 +35,9 @@ void fb_row8(int col, int line, int h, unsigned row);
 void fb_text(int col, int line, const char *s, int sx, int sy);
 int fb_text_width(const char *s, int sx);
 
+/* The 20-cell halves of one framebuffer line (bit 0 = leftmost cell of each half). */
+void fb_line(unsigned line, uint32_t *left, uint32_t *right);
+
 /* Write every line of the framebuffer into the playfield streams. */
 void fb_present(void);
 

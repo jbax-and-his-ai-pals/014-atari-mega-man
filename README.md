@@ -40,7 +40,18 @@ The frame number `make shot` takes is not a count of game frames (it ran about
 
 ## Screens
 
-The game runs title -> stage select -> play. Title and select are drawn into a
+The game runs intro/title -> stage select -> play.
+
+The intro (`src/arm/intro.c`) pans the camera up a tall tower at dusk to the hero
+on its roof (the game kernel, with the tower as playfield), then cuts to a night
+vista: a black sky with a banded title, a blue glow behind a jagged mountain ridge,
+a skyline of lit windows, and a rooftop where the hero stands. The vista uses a
+second visible loop, the scene kernel, which streams a playfield color per line
+(so the title, mountains and city can each have their own) and has no sprite
+drift or bullets. Press fire during the pan to skip to the vista, and again to leave
+the title. All of the intro's art is generated from a few numbers.
+
+The framebuffer screens work like this. Title and select are drawn into a
 framebuffer (`src/arm/fb.c`): a 40-cell x 192-line bitmap (cells are the 4 px
 playfield blocks) with a 3x5 font, so they have one-line vertical detail instead
 of the tile map's 8 lines. The static art is drawn once and only the blinking
@@ -110,7 +121,8 @@ onto the frame, so snapshots before about frame 90 can show a rolling picture.
 | `src/6502/vectors.asm` | Reset vector and CDFJ+ C stack and entry words |
 | `src/arm/main.c` | Frame entry, called once per frame in VBLANK |
 | `src/arm/game.c` | State machine: title, stage select, play |
-| `src/arm/screens.c` | Title and stage-select screens |
+| `src/arm/screens.c` | Stage-select screen |
+| `src/arm/intro.c` | The intro: tower pan, then the night vista and title |
 | `src/arm/fb.c` | Framebuffer drawing, font and playfield packer |
 | `src/arm/physics.c` | Hero motion and tile collision, 8.8 fixed point |
 | `src/arm/display_list.c` | Camera, and rebuilds the per-scanline tables every frame |

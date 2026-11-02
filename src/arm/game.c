@@ -9,6 +9,7 @@
 #include "game.h"
 #include "health.h"
 #include "input.h"
+#include "intro.h"
 #include "level.h"
 #include "physics.h"
 #include "screens.h"
@@ -37,7 +38,7 @@ static void enter(int s)
     state = (uint8_t)s;
     tick = 0;
     if (s == GAME_TITLE) {
-        screen_title_enter();
+        intro_enter();
     } else if (s == GAME_SELECT) {
         cursor_x = 0;
         cursor_y = 0;
@@ -113,7 +114,8 @@ static void play_frame(unsigned pad)
 static unsigned demo_pad(void)
 {
     static const struct { uint8_t state; uint16_t at; uint8_t pad; } script[] = {
-        { GAME_TITLE,  100, PAD_FIRE },
+        { GAME_TITLE,  100, PAD_FIRE },     /* skip the pan */
+        { GAME_TITLE,  130, PAD_FIRE },     /* leave the title */
         { GAME_SELECT,  40, PAD_RIGHT },
         { GAME_SELECT, 100, PAD_DOWN },
         { GAME_SELECT, 160, PAD_LEFT },
@@ -143,8 +145,12 @@ void game_frame(void)
     prev_pad = pad;
 
     if (state == GAME_TITLE) {
-        if (pressed & PAD_FIRE)
-            enter(GAME_SELECT);
+        if (pressed & PAD_FIRE) {
+            if (intro_ready())
+                enter(GAME_SELECT);
+            else
+                intro_skip();           /* a press during the pan jumps to the end */
+        }
     } else if (state == GAME_SELECT) {
         move_cursor(pressed);
         if ((pressed & PAD_FIRE) && stage_playable(stage_at(cursor_x, cursor_y)))
@@ -152,7 +158,7 @@ void game_frame(void)
     }
 
     if (state == GAME_TITLE)
-        screen_title_frame(tick);
+        intro_frame(tick);
     else if (state == GAME_SELECT)
         screen_select_frame(cursor_x, cursor_y, tick);
     else
