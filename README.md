@@ -41,7 +41,8 @@ build time; `src/arm/level.h` reads it for both rendering and collision.
 The playfield can only scroll in whole 4 px columns, so the camera snaps to a
 column while the hero sprite moves pixel by pixel. Physics limits for level
 design: the hero is 4 x 2 tiles, jumps about 5 rows high, and clears gaps of up
-to about 7 columns. Falling off the bottom respawns at `S`. `W` places a walker
+to about 7 columns. Falling off the bottom costs a hit point and respawns at `S`.
+Keep row 0 empty: the health pips are drawn over it. `W` places a walker
 (patrols its floor, turns at walls and edges) and `F` a flyer (patrols and
 bobs); up to 16 per stage.
 
